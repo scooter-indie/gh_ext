@@ -1,0 +1,6 @@
+# Minimal valid configuration
+project:
+  number: 13
+  owner: scooter-indie
+repositories:
+  - scooter-indie/gh-pm-test

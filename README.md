@@ -1,26 +1,106 @@
-# gh_ext
+# gh-pm
 
-A custom extension for the GitHub CLI (gh).
+A unified GitHub CLI extension for project management, sub-issue hierarchy, and project templating.
+
+## Features
+
+- **Project Management**: List, view, create, and update issues with project field values
+- **Sub-Issue Hierarchy**: Create and manage parent-child issue relationships
+- **Project Templates**: Create projects from YAML templates or existing projects
 
 ## Installation
 
+### From GitHub Releases
+
 ```bash
-gh extension install scooter-indie/gh_ext
+gh extension install scooter-indie/gh-pm-unified
+```
+
+### From Source
+
+```bash
+git clone https://github.com/scooter-indie/gh-pm-unified.git
+cd gh-pm-unified
+make install-extension
+```
+
+## Quick Start
+
+1. Initialize configuration in your repository:
+
+```bash
+gh pm init
+```
+
+2. List issues with project metadata:
+
+```bash
+gh pm list
+```
+
+3. View an issue with all project fields:
+
+```bash
+gh pm view 123
 ```
 
 ## Usage
 
 ```bash
-gh ext [command]
+gh pm [command]
+
+Available Commands:
+  init        Initialize gh-pm configuration
+  list        List issues with project metadata
+  view        View issue with project fields
+  create      Create issue with project fields
+  move        Update issue project fields
+  sub         Manage sub-issues
+  project     Manage project templates
+
+Flags:
+  -h, --help      help for gh-pm
+  -v, --version   version for gh-pm
+```
+
+## Configuration
+
+gh-pm uses a `.gh-pm.yml` file in your repository root:
+
+```yaml
+project:
+  owner: your-username
+  number: 1
+repositories:
+  - your-username/your-repo
+defaults:
+  priority: p2
+  status: backlog
 ```
 
 ## Development
 
-Clone the repository:
+### Prerequisites
+
+- Go 1.21+
+- GitHub CLI (`gh`)
+
+### Building
 
 ```bash
-git clone https://github.com/scooter-indie/gh_ext.git
-cd gh_ext
+make build
+```
+
+### Testing
+
+```bash
+make test
+```
+
+### Linting
+
+```bash
+make lint
 ```
 
 ## License

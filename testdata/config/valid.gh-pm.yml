@@ -1,0 +1,27 @@
+# Valid configuration for testing
+project:
+  name: gh-pm-test-project
+  number: 13
+  owner: scooter-indie
+repositories:
+  - scooter-indie/gh-pm-test
+defaults:
+  priority: p2
+  status: backlog
+  labels:
+    - test-label
+fields:
+  priority:
+    field: Priority
+    values:
+      p0: P0
+      p1: P1
+      p2: P2
+  status:
+    field: Status
+    values:
+      backlog: Backlog
+      ready: Ready
+      in_progress: In progress
+      in_review: In review
+      done: Done

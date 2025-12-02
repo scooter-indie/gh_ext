@@ -1,0 +1,6 @@
+# Invalid: missing owner in project
+project:
+  number: 13
+  # owner is missing
+repositories:
+  - scooter-indie/gh-pm-test

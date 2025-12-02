@@ -1,6 +1,6 @@
 # Product Backlog: gh-pm-unified
 
-**Revision:** 1
+**Revision:** 2
 **Last Updated:** 2025-12-02
 **Project Vision:** Create a unified GitHub CLI extension combining project management, sub-issue hierarchy, and project templating for comprehensive GitHub Projects v2 management.
 
@@ -37,8 +37,8 @@ All stories must meet these criteria:
 
 **Story Points:** 5
 **Priority:** High
-**Status:** Backlog
-**Sprint:** -
+**Status:** Selected
+**Sprint:** 1
 
 ---
 
@@ -57,8 +57,8 @@ All stories must meet these criteria:
 
 **Story Points:** 5
 **Priority:** High
-**Status:** Backlog
-**Sprint:** -
+**Status:** Selected
+**Sprint:** 1
 
 ---
 
@@ -622,6 +622,8 @@ All stories must meet these criteria:
 
 **Story Points:** 5
 **Priority:** High
+**Status:** Selected
+**Sprint:** 1
 
 ---
 
@@ -640,6 +642,8 @@ All stories must meet these criteria:
 
 **Story Points:** 5
 **Priority:** High
+**Status:** Selected
+**Sprint:** 1
 
 ---
 
@@ -658,6 +662,8 @@ All stories must meet these criteria:
 
 **Story Points:** 8
 **Priority:** High
+**Status:** Selected
+**Sprint:** 1
 
 ---
 

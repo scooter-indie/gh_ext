@@ -1,0 +1,5 @@
+# Invalid: missing project section
+repositories:
+  - scooter-indie/gh-pm-test
+defaults:
+  priority: p2
