@@ -11,12 +11,18 @@ import (
 )
 
 type moveOptions struct {
-	status   string
-	priority string
+	status    string
+	priority  string
+	recursive bool
+	depth     int
+	dryRun    bool
+	yes       bool // skip confirmation
 }
 
 func newMoveCommand() *cobra.Command {
-	opts := &moveOptions{}
+	opts := &moveOptions{
+		depth: 10, // default max depth
+	}
 
 	cmd := &cobra.Command{
 		Use:   "move <issue-number>",
@@ -27,7 +33,10 @@ Changes the status, priority, or other project fields for an issue
 that is already in the configured project.
 
 Field values are resolved through config aliases, so you can use
-shorthand values like "in_progress" which will be mapped to "In Progress".`,
+shorthand values like "in_progress" which will be mapped to "In Progress".
+
+Use --recursive to update all sub-issues as well. This will traverse
+the issue tree and apply the same changes to all descendants.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runMove(cmd, args, opts)
@@ -36,8 +45,22 @@ shorthand values like "in_progress" which will be mapped to "In Progress".`,
 
 	cmd.Flags().StringVarP(&opts.status, "status", "s", "", "Set project status field")
 	cmd.Flags().StringVarP(&opts.priority, "priority", "p", "", "Set project priority field")
+	cmd.Flags().BoolVarP(&opts.recursive, "recursive", "r", false, "Apply changes to all sub-issues recursively")
+	cmd.Flags().IntVar(&opts.depth, "depth", 10, "Maximum depth for recursive operations")
+	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Show what would be changed without making changes")
+	cmd.Flags().BoolVarP(&opts.yes, "yes", "y", false, "Skip confirmation prompt for recursive operations")
 
 	return cmd
+}
+
+// issueInfo holds information about an issue to be updated
+type issueInfo struct {
+	Owner  string
+	Repo   string
+	Number int
+	Title  string
+	ItemID string
+	Depth  int
 }
 
 func runMove(cmd *cobra.Command, args []string, opts *moveOptions) error {
@@ -101,45 +124,188 @@ func runMove(cmd *cobra.Command, args []string, opts *moveOptions) error {
 		return fmt.Errorf("failed to get project items: %w", err)
 	}
 
-	var itemID string
+	// Build a map of issue numbers to item IDs for quick lookup
+	itemIDMap := make(map[string]string) // "owner/repo#number" -> itemID
 	for _, item := range items {
-		if item.Issue != nil && item.Issue.Number == number {
-			itemID = item.ID
-			break
+		if item.Issue != nil {
+			key := fmt.Sprintf("%s/%s#%d", item.Issue.Repository.Owner, item.Issue.Repository.Name, item.Issue.Number)
+			itemIDMap[key] = item.ID
 		}
 	}
 
-	if itemID == "" {
+	rootKey := fmt.Sprintf("%s/%s#%d", owner, repo, number)
+	rootItemID, inProject := itemIDMap[rootKey]
+	if !inProject {
 		return fmt.Errorf("issue #%d is not in the project", number)
 	}
 
-	// Track changes for confirmation message
-	var changes []string
+	// Collect all issues to update
+	issuesToUpdate := []issueInfo{{
+		Owner:  owner,
+		Repo:   repo,
+		Number: number,
+		Title:  issue.Title,
+		ItemID: rootItemID,
+		Depth:  0,
+	}}
 
-	// Update status if provided
+	// If recursive, collect all sub-issues
+	if opts.recursive {
+		subIssues, err := collectSubIssuesRecursive(client, owner, repo, number, itemIDMap, 1, opts.depth)
+		if err != nil {
+			return fmt.Errorf("failed to collect sub-issues: %w", err)
+		}
+		issuesToUpdate = append(issuesToUpdate, subIssues...)
+	}
+
+	// Resolve field values
+	statusValue := ""
+	priorityValue := ""
+	var changeDescriptions []string
+
 	if opts.status != "" {
-		statusValue := cfg.ResolveFieldValue("status", opts.status)
-		if err := client.SetProjectItemField(project.ID, itemID, "Status", statusValue); err != nil {
-			return fmt.Errorf("failed to set status: %w", err)
-		}
-		changes = append(changes, fmt.Sprintf("Status → %s", statusValue))
+		statusValue = cfg.ResolveFieldValue("status", opts.status)
+		changeDescriptions = append(changeDescriptions, fmt.Sprintf("Status → %s", statusValue))
 	}
-
-	// Update priority if provided
 	if opts.priority != "" {
-		priorityValue := cfg.ResolveFieldValue("priority", opts.priority)
-		if err := client.SetProjectItemField(project.ID, itemID, "Priority", priorityValue); err != nil {
-			return fmt.Errorf("failed to set priority: %w", err)
-		}
-		changes = append(changes, fmt.Sprintf("Priority → %s", priorityValue))
+		priorityValue = cfg.ResolveFieldValue("priority", opts.priority)
+		changeDescriptions = append(changeDescriptions, fmt.Sprintf("Priority → %s", priorityValue))
 	}
 
-	// Output confirmation
-	fmt.Printf("✓ Updated issue #%d: %s\n", issue.Number, issue.Title)
-	for _, change := range changes {
-		fmt.Printf("  • %s\n", change)
+	// Show what will be updated
+	if opts.recursive || opts.dryRun {
+		if opts.dryRun {
+			fmt.Println("Dry run - no changes will be made")
+			fmt.Println()
+		}
+
+		fmt.Printf("Issues to update (%d):\n", len(issuesToUpdate))
+		for _, info := range issuesToUpdate {
+			indent := strings.Repeat("  ", info.Depth)
+			if info.ItemID != "" {
+				fmt.Printf("%s• #%d - %s\n", indent, info.Number, info.Title)
+			} else {
+				fmt.Printf("%s• #%d - %s (not in project, will skip)\n", indent, info.Number, info.Title)
+			}
+		}
+
+		fmt.Println("\nChanges to apply:")
+		for _, desc := range changeDescriptions {
+			fmt.Printf("  • %s\n", desc)
+		}
+
+		if opts.dryRun {
+			return nil
+		}
+
+		// Prompt for confirmation unless --yes is provided
+		if !opts.yes {
+			fmt.Printf("\nProceed with updating %d issues? [y/N]: ", len(issuesToUpdate))
+			var response string
+			fmt.Scanln(&response)
+			response = strings.ToLower(strings.TrimSpace(response))
+			if response != "y" && response != "yes" {
+				fmt.Println("Aborted.")
+				return nil
+			}
+		}
+		fmt.Println()
 	}
-	fmt.Printf("🔗 %s\n", issue.URL)
+
+	// Apply updates
+	updatedCount := 0
+	skippedCount := 0
+
+	for _, info := range issuesToUpdate {
+		if info.ItemID == "" {
+			skippedCount++
+			continue
+		}
+
+		// Update status if provided
+		if statusValue != "" {
+			if err := client.SetProjectItemField(project.ID, info.ItemID, "Status", statusValue); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to set status for #%d: %v\n", info.Number, err)
+				continue
+			}
+		}
+
+		// Update priority if provided
+		if priorityValue != "" {
+			if err := client.SetProjectItemField(project.ID, info.ItemID, "Priority", priorityValue); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to set priority for #%d: %v\n", info.Number, err)
+				continue
+			}
+		}
+
+		updatedCount++
+		if !opts.recursive {
+			// Single issue - show detailed output
+			fmt.Printf("✓ Updated issue #%d: %s\n", info.Number, info.Title)
+			for _, desc := range changeDescriptions {
+				fmt.Printf("  • %s\n", desc)
+			}
+			fmt.Printf("🔗 https://github.com/%s/%s/issues/%d\n", info.Owner, info.Repo, info.Number)
+		}
+	}
+
+	// Summary for recursive operations
+	if opts.recursive {
+		fmt.Printf("✓ Updated %d issues", updatedCount)
+		if skippedCount > 0 {
+			fmt.Printf(" (%d skipped - not in project)", skippedCount)
+		}
+		fmt.Println()
+	}
 
 	return nil
+}
+
+// collectSubIssuesRecursive recursively collects all sub-issues up to maxDepth
+func collectSubIssuesRecursive(client *api.Client, owner, repo string, number int, itemIDMap map[string]string, currentDepth, maxDepth int) ([]issueInfo, error) {
+	if currentDepth > maxDepth {
+		return nil, nil
+	}
+
+	subIssues, err := client.GetSubIssues(owner, repo, number)
+	if err != nil {
+		return nil, err
+	}
+
+	var result []issueInfo
+	for _, sub := range subIssues {
+		// Determine the repo for this sub-issue
+		subOwner := sub.Repository.Owner
+		subRepo := sub.Repository.Name
+		if subOwner == "" {
+			subOwner = owner
+		}
+		if subRepo == "" {
+			subRepo = repo
+		}
+
+		key := fmt.Sprintf("%s/%s#%d", subOwner, subRepo, sub.Number)
+		itemID := itemIDMap[key] // may be empty if not in project
+
+		info := issueInfo{
+			Owner:  subOwner,
+			Repo:   subRepo,
+			Number: sub.Number,
+			Title:  sub.Title,
+			ItemID: itemID,
+			Depth:  currentDepth,
+		}
+		result = append(result, info)
+
+		// Recurse into this sub-issue's children
+		children, err := collectSubIssuesRecursive(client, subOwner, subRepo, sub.Number, itemIDMap, currentDepth+1, maxDepth)
+		if err != nil {
+			// Log warning but continue
+			fmt.Fprintf(os.Stderr, "Warning: failed to get sub-issues for #%d: %v\n", sub.Number, err)
+			continue
+		}
+		result = append(result, children...)
+	}
+
+	return result, nil
 }
