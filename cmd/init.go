@@ -294,9 +294,9 @@ type MetadataFieldOption struct {
 
 // TriageRule represents a single triage rule configuration.
 type TriageRule struct {
-	Query       string                 `yaml:"query"`
-	Apply       TriageApply            `yaml:"apply"`
-	Interactive map[string]bool        `yaml:"interactive,omitempty"`
+	Query       string          `yaml:"query"`
+	Apply       TriageApply     `yaml:"apply"`
+	Interactive map[string]bool `yaml:"interactive,omitempty"`
 }
 
 // TriageApply represents what to apply when a triage rule matches.
