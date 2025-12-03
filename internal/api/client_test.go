@@ -15,6 +15,11 @@ func TestNewClient_ReturnsClient(t *testing.T) {
 }
 
 func TestNewClient_HasGraphQLClient(t *testing.T) {
+	// Skip in CI - requires gh auth
+	if testing.Short() {
+		t.Skip("Skipping test that requires gh auth")
+	}
+
 	// ACT: Create a new client
 	client := NewClient()
 
