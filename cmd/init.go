@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/scooter-indie/gh-pmu/internal/api"
+	"github.com/scooter-indie/gh-pmu/internal/ui"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -22,10 +23,10 @@ func newInitCommand() *cobra.Command {
 		Long: `Initialize gh-pmu configuration by creating a .gh-pmu.yml file.
 
 This command will:
-- Prompt for project owner and number
-- Auto-detect the current repository (if in a git repo)
+- Auto-detect the current repository from git remote
+- Discover and list available projects for selection
 - Fetch and cache project field metadata from GitHub
-- Validate the project exists before saving`,
+- Create a .gh-pmu.yml configuration file`,
 		RunE: runInit,
 	}
 
@@ -33,19 +34,24 @@ This command will:
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
-	cmd.Println("Initializing gh-pm configuration...")
-
+	u := ui.New(cmd.OutOrStdout())
 	reader := bufio.NewReader(os.Stdin)
+
+	// Print header
+	u.Header("gh-pmu init", "Configure project management settings")
+	fmt.Fprintln(cmd.OutOrStdout())
 
 	// Check if config already exists
 	if _, err := os.Stat(".gh-pmu.yml"); err == nil {
-		cmd.Print("Configuration file .gh-pmu.yml already exists. Overwrite? [y/N]: ")
+		u.Warning("Configuration file .gh-pmu.yml already exists")
+		fmt.Fprint(cmd.OutOrStdout(), u.Prompt("Overwrite?", "y/N"))
 		response, _ := reader.ReadString('\n')
 		response = strings.TrimSpace(strings.ToLower(response))
 		if response != "y" && response != "yes" {
-			cmd.Println("Aborted.")
+			u.Info("Aborted")
 			return nil
 		}
+		fmt.Fprintln(cmd.OutOrStdout())
 	}
 
 	// Auto-detect repository
@@ -57,50 +63,124 @@ func runInit(cmd *cobra.Command, args []string) error {
 		o, _ := splitRepository(detectedRepo)
 		owner = o
 		defaultRepo = detectedRepo
-		cmd.Printf("Detected repository: %s\n", detectedRepo)
-	}
-
-	// Prompt for project owner
-	if owner == "" {
-		cmd.Print("Project owner (GitHub username or organization): ")
+		u.Success(fmt.Sprintf("Detected repository: %s", detectedRepo))
+	} else {
+		u.Warning("Could not detect repository from git remote")
+		fmt.Fprint(cmd.OutOrStdout(), u.Prompt("Repository owner", ""))
 		ownerInput, _ := reader.ReadString('\n')
 		owner = strings.TrimSpace(ownerInput)
-	} else {
-		cmd.Printf("Project owner [%s]: ", owner)
-		ownerInput, _ := reader.ReadString('\n')
-		ownerInput = strings.TrimSpace(ownerInput)
-		if ownerInput != "" {
-			owner = ownerInput
+		if owner == "" {
+			return fmt.Errorf("repository owner is required")
 		}
 	}
 
-	if owner == "" {
-		return fmt.Errorf("project owner is required")
-	}
-
-	// Prompt for project number
-	cmd.Print("Project number: ")
-	numberInput, _ := reader.ReadString('\n')
-	numberInput = strings.TrimSpace(numberInput)
-	projectNumber, err := strconv.Atoi(numberInput)
-	if err != nil {
-		return fmt.Errorf("invalid project number: %s", numberInput)
-	}
-
-	// Validate project exists
-	cmd.Printf("Validating project %s/%d...\n", owner, projectNumber)
+	// Initialize API client
 	client := api.NewClient()
 
-	project, err := client.GetProject(owner, projectNumber)
-	if err != nil {
-		return fmt.Errorf("failed to find project: %w", err)
-	}
-	cmd.Printf("Found project: %s\n", project.Title)
+	// Fetch projects for owner
+	fmt.Fprintln(cmd.OutOrStdout())
+	spinner := ui.NewSpinner(cmd.OutOrStdout(), fmt.Sprintf("Fetching projects for %s...", owner))
+	spinner.Start()
 
-	// Prompt for repository
+	projects, err := client.ListProjects(owner)
+	spinner.Stop()
+
+	var selectedProject *api.Project
+	var projectNumber int
+
+	if err != nil || len(projects) == 0 {
+		// No projects found or error - fall back to manual entry
+		if err != nil {
+			u.Warning(fmt.Sprintf("Could not fetch projects: %v", err))
+		} else {
+			u.Warning(fmt.Sprintf("No projects found for %s", owner))
+		}
+		fmt.Fprintln(cmd.OutOrStdout())
+
+		// Manual project number entry
+		fmt.Fprint(cmd.OutOrStdout(), u.Prompt("Project number", ""))
+		numberInput, _ := reader.ReadString('\n')
+		numberInput = strings.TrimSpace(numberInput)
+		projectNumber, err = strconv.Atoi(numberInput)
+		if err != nil {
+			return fmt.Errorf("invalid project number: %s", numberInput)
+		}
+
+		// Validate project exists
+		spinner = ui.NewSpinner(cmd.OutOrStdout(), fmt.Sprintf("Validating project %s/%d...", owner, projectNumber))
+		spinner.Start()
+		selectedProject, err = client.GetProject(owner, projectNumber)
+		spinner.Stop()
+
+		if err != nil {
+			return fmt.Errorf("failed to find project: %w", err)
+		}
+		u.Success(fmt.Sprintf("Found project: %s", selectedProject.Title))
+	} else {
+		// Projects found - show selection menu
+		u.Success(fmt.Sprintf("Found %d project(s)", len(projects)))
+		fmt.Fprintln(cmd.OutOrStdout())
+
+		u.Step(1, 2, "Select Project")
+
+		// Build menu options
+		var menuOptions []string
+		for _, p := range projects {
+			menuOptions = append(menuOptions, fmt.Sprintf("%s (#%d)", p.Title, p.Number))
+		}
+		u.PrintMenu(menuOptions, true)
+
+		// Get selection
+		defaultSelection := "1"
+		fmt.Fprint(cmd.OutOrStdout(), u.Prompt("Select", defaultSelection))
+		selectionInput, _ := reader.ReadString('\n')
+		selectionInput = strings.TrimSpace(selectionInput)
+
+		if selectionInput == "" {
+			selectionInput = defaultSelection
+		}
+
+		selection, err := strconv.Atoi(selectionInput)
+		if err != nil {
+			return fmt.Errorf("invalid selection: %s", selectionInput)
+		}
+
+		if selection == 0 {
+			// Manual entry
+			fmt.Fprint(cmd.OutOrStdout(), u.Prompt("Project number", ""))
+			numberInput, _ := reader.ReadString('\n')
+			numberInput = strings.TrimSpace(numberInput)
+			projectNumber, err = strconv.Atoi(numberInput)
+			if err != nil {
+				return fmt.Errorf("invalid project number: %s", numberInput)
+			}
+
+			// Validate project exists
+			spinner = ui.NewSpinner(cmd.OutOrStdout(), fmt.Sprintf("Validating project %s/%d...", owner, projectNumber))
+			spinner.Start()
+			selectedProject, err = client.GetProject(owner, projectNumber)
+			spinner.Stop()
+
+			if err != nil {
+				return fmt.Errorf("failed to find project: %w", err)
+			}
+		} else if selection < 1 || selection > len(projects) {
+			return fmt.Errorf("invalid selection: must be between 0 and %d", len(projects))
+		} else {
+			selectedProject = &projects[selection-1]
+			projectNumber = selectedProject.Number
+		}
+
+		u.Success(fmt.Sprintf("Project: %s (#%d)", selectedProject.Title, selectedProject.Number))
+	}
+
+	// Step 2: Confirm repository
+	fmt.Fprintln(cmd.OutOrStdout())
+	u.Step(2, 2, "Confirm Repository")
+
 	var repo string
 	if defaultRepo != "" {
-		cmd.Printf("Repository [%s]: ", defaultRepo)
+		fmt.Fprint(cmd.OutOrStdout(), u.Prompt("Repository", defaultRepo))
 		repoInput, _ := reader.ReadString('\n')
 		repoInput = strings.TrimSpace(repoInput)
 		if repoInput != "" {
@@ -109,7 +189,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 			repo = defaultRepo
 		}
 	} else {
-		cmd.Print("Repository (owner/repo): ")
+		fmt.Fprint(cmd.OutOrStdout(), u.Prompt("Repository (owner/repo)", ""))
 		repoInput, _ := reader.ReadString('\n')
 		repo = strings.TrimSpace(repoInput)
 	}
@@ -118,17 +198,23 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("repository is required")
 	}
 
+	u.Success(fmt.Sprintf("Repository: %s", repo))
+
 	// Fetch project fields
-	cmd.Println("Fetching project fields...")
-	fields, err := client.GetProjectFields(project.ID)
+	fmt.Fprintln(cmd.OutOrStdout())
+	spinner = ui.NewSpinner(cmd.OutOrStdout(), "Fetching project fields...")
+	spinner.Start()
+	fields, err := client.GetProjectFields(selectedProject.ID)
+	spinner.Stop()
+
 	if err != nil {
-		cmd.Printf("Warning: could not fetch project fields: %v\n", err)
+		u.Warning(fmt.Sprintf("Could not fetch project fields: %v", err))
 		fields = nil
 	}
 
 	// Convert to metadata
 	metadata := &ProjectMetadata{
-		ProjectID: project.ID,
+		ProjectID: selectedProject.ID,
 	}
 	for _, f := range fields {
 		fm := FieldMetadata{
@@ -147,7 +233,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Create config
 	cfg := &InitConfig{
-		ProjectName:   project.Title,
+		ProjectName:   selectedProject.Title,
 		ProjectOwner:  owner,
 		ProjectNumber: projectNumber,
 		Repositories:  []string{repo},
@@ -159,10 +245,13 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 
-	cmd.Println("Configuration saved to .gh-pmu.yml")
-	cmd.Printf("Project: %s (#%d)\n", project.Title, project.Number)
-	cmd.Printf("Repository: %s\n", repo)
-	cmd.Printf("Fields cached: %d\n", len(fields))
+	// Print summary
+	u.SummaryBox("Configuration saved", map[string]string{
+		"Project":    fmt.Sprintf("%s (#%d)", selectedProject.Title, selectedProject.Number),
+		"Repository": repo,
+		"Fields":     fmt.Sprintf("%d cached", len(fields)),
+		"Config":     ".gh-pmu.yml",
+	}, []string{"Project", "Repository", "Fields", "Config"})
 
 	return nil
 }

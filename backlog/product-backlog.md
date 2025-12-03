@@ -711,6 +711,76 @@ This epic is entirely blocked because it depends on the ability to create projec
 
 ---
 
+### Story 1.13: Enhanced Init UX with Project Discovery
+
+**As a** developer initializing gh-pmu in a repository
+**I want** the init command to automatically detect my repository and suggest associated projects
+**So that** I can complete setup with minimal manual input and enjoy a polished experience
+
+**Acceptance Criteria:**
+- [ ] Auto-detect current repository from git remote (already implemented)
+- [ ] Query GitHub API for projects associated with the repository owner
+- [ ] Present a numbered list of available projects for selection
+- [ ] Allow user to select project by number instead of typing project number manually
+- [ ] Show project title and number in the selection list
+- [ ] Fall back to manual entry if no projects found or user chooses "other"
+- [ ] Support both user and organization projects
+- [ ] Handle repositories with multiple associated projects gracefully
+
+**UX Requirements:**
+- [ ] Show a spinner/progress indicator while fetching data from GitHub API
+- [ ] Use color coding: cyan for prompts, green for success, yellow for warnings
+- [ ] Display a styled header/banner for the init wizard
+- [ ] Group related information in visual boxes or sections
+- [ ] Show checkmarks (✓) for completed steps
+- [ ] Provide clear step numbers (Step 1 of 3, etc.)
+- [ ] Gracefully handle terminal width constraints
+- [ ] Final summary displayed in a formatted box with all configured values
+
+**Example Output:**
+```
+╭─────────────────────────────────────────╮
+│  gh-pmu init                            │
+│  Configure project management settings  │
+╰─────────────────────────────────────────╯
+
+✓ Detected repository: scooter-indie/gh-pmu
+
+⠋ Fetching projects for scooter-indie...
+
+Step 1 of 2: Select Project
+┌─────────────────────────────────────────┐
+│  1. gh-pmu (#11)                        │
+│  2. dotfiles (#8)                       │
+│  3. website (#5)                        │
+│  0. Enter project number manually       │
+└─────────────────────────────────────────┘
+Select [1]:
+
+✓ Project: gh-pmu (#11)
+
+Step 2 of 2: Confirm Repository
+Repository [scooter-indie/gh-pmu]:
+
+⠋ Fetching project fields...
+
+╭─────────────────────────────────────────╮
+│  ✓ Configuration saved                  │
+│                                         │
+│  Project:    gh-pmu (#11)               │
+│  Repository: scooter-indie/gh-pmu       │
+│  Fields:     12 cached                  │
+│  Config:     .gh-pmu.yml                │
+╰─────────────────────────────────────────╯
+```
+
+**Story Points:** 8
+**Priority:** Medium
+**Status:** In Progress
+**Sprint:** 7
+
+---
+
 ## Icebox (Future Considerations)
 
 Stories that are not prioritized but worth capturing:

@@ -565,3 +565,118 @@ func (c *Client) GetParentIssue(owner, repo string, number int) (*Issue, error) 
 		URL:    query.Repository.Issue.Parent.URL,
 	}, nil
 }
+
+// ListProjects fetches all projects for an owner (user or organization)
+func (c *Client) ListProjects(owner string) ([]Project, error) {
+	if c.gql == nil {
+		return nil, fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
+	}
+
+	// First try as user projects
+	projects, err := c.listUserProjects(owner)
+	if err == nil && len(projects) > 0 {
+		return projects, nil
+	}
+
+	// If that fails or returns empty, try as organization projects
+	orgProjects, err := c.listOrgProjects(owner)
+	if err != nil {
+		// If both fail, return user error if we had one
+		if projects != nil {
+			return projects, nil
+		}
+		return nil, fmt.Errorf("failed to list projects for %s: %w", owner, err)
+	}
+
+	return orgProjects, nil
+}
+
+func (c *Client) listUserProjects(owner string) ([]Project, error) {
+	var query struct {
+		User struct {
+			ProjectsV2 struct {
+				Nodes []struct {
+					ID     string
+					Number int
+					Title  string
+					URL    string `graphql:"url"`
+					Closed bool
+				}
+			} `graphql:"projectsV2(first: 20, orderBy: {field: UPDATED_AT, direction: DESC})"`
+		} `graphql:"user(login: $owner)"`
+	}
+
+	variables := map[string]interface{}{
+		"owner": graphql.String(owner),
+	}
+
+	err := c.gql.Query("ListUserProjects", &query, variables)
+	if err != nil {
+		return nil, err
+	}
+
+	var projects []Project
+	for _, node := range query.User.ProjectsV2.Nodes {
+		if node.Closed {
+			continue // Skip closed projects
+		}
+		projects = append(projects, Project{
+			ID:     node.ID,
+			Number: node.Number,
+			Title:  node.Title,
+			URL:    node.URL,
+			Closed: node.Closed,
+			Owner: ProjectOwner{
+				Type:  "User",
+				Login: owner,
+			},
+		})
+	}
+
+	return projects, nil
+}
+
+func (c *Client) listOrgProjects(owner string) ([]Project, error) {
+	var query struct {
+		Organization struct {
+			ProjectsV2 struct {
+				Nodes []struct {
+					ID     string
+					Number int
+					Title  string
+					URL    string `graphql:"url"`
+					Closed bool
+				}
+			} `graphql:"projectsV2(first: 20, orderBy: {field: UPDATED_AT, direction: DESC})"`
+		} `graphql:"organization(login: $owner)"`
+	}
+
+	variables := map[string]interface{}{
+		"owner": graphql.String(owner),
+	}
+
+	err := c.gql.Query("ListOrgProjects", &query, variables)
+	if err != nil {
+		return nil, err
+	}
+
+	var projects []Project
+	for _, node := range query.Organization.ProjectsV2.Nodes {
+		if node.Closed {
+			continue // Skip closed projects
+		}
+		projects = append(projects, Project{
+			ID:     node.ID,
+			Number: node.Number,
+			Title:  node.Title,
+			URL:    node.URL,
+			Closed: node.Closed,
+			Owner: ProjectOwner{
+				Type:  "Organization",
+				Login: owner,
+			},
+		})
+	}
+
+	return projects, nil
+}
