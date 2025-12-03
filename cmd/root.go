@@ -14,7 +14,7 @@ func NewRootCommand() *cobra.Command {
 
 This extension combines and replaces:
   - gh-pm (https://github.com/yahsan2/gh-pm) - Project management
-  - gh-sub-issue (https://github.com/because-of-saturday/gh-sub-issue) - Sub-issue hierarchy
+  - gh-sub-issue (https://github.com/yahsan2/gh-sub-issue) - Sub-issue hierarchy
 
 Use 'gh pmu <command> --help' for more information about a command.`,
 		Version: version,
