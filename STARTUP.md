@@ -1,7 +1,7 @@
 # Startup Instructions
 
 **Framework:** IDPF-Agile
-**Specialists:** Backend-Specialist, API-Integration-Specialist, PRD-Analyst, Security-Engineer
+**Specialists:** Backend-Specialist, API-Integration-Specialist, Security-Engineer, PRD-Analyst
 
 ---
 

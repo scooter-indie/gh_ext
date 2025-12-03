@@ -1,26 +1,27 @@
 # gh-pmu
 
-A unified GitHub CLI extension for project management, sub-issue hierarchy, and project templating.
+A unified GitHub CLI extension for project management and sub-issue hierarchy.
 
 ## Features
 
 - **Project Management**: List, view, create, and update issues with project field values
 - **Sub-Issue Hierarchy**: Create and manage parent-child issue relationships
-- **Project Templates**: Create projects from YAML templates or existing projects
+- **Batch Operations**: Intake untracked issues and triage with configurable rules
+- **Issue Splitting**: Convert checklists into sub-issues automatically
 
 ## Installation
 
 ### From GitHub Releases
 
 ```bash
-gh extension install scooter-indie/gh-pm-unified
+gh extension install scooter-indie/gh-pmu
 ```
 
 ### From Source
 
 ```bash
-git clone https://github.com/scooter-indie/gh-pm-unified.git
-cd gh-pm-unified
+git clone https://github.com/scooter-indie/gh-pmu.git
+cd gh-pmu
 make install-extension
 ```
 
@@ -44,19 +45,28 @@ gh pmu list
 gh pmu view 123
 ```
 
-## Usage
+## Commands
 
-```bash
+```
 gh pmu [command]
 
-Available Commands:
+Project Management:
   init        Initialize gh-pmu configuration
   list        List issues with project metadata
   view        View issue with project fields
   create      Create issue with project fields
   move        Update issue project fields
-  sub         Manage sub-issues
-  project     Manage project templates
+
+Sub-Issue Management:
+  sub add     Link existing issue as sub-issue
+  sub create  Create new sub-issue under parent
+  sub list    List sub-issues of a parent
+  sub remove  Unlink sub-issue from parent
+
+Batch Operations:
+  intake      Find and add untracked issues to project
+  triage      Bulk update issues based on config rules
+  split       Create sub-issues from checklist or arguments
 
 Flags:
   -h, --help      help for gh-pmu
@@ -71,11 +81,80 @@ gh-pmu uses a `.gh-pmu.yml` file in your repository root:
 project:
   owner: your-username
   number: 1
+
 repositories:
   - your-username/your-repo
+
 defaults:
-  priority: p2
-  status: backlog
+  priority: P2
+  status: Backlog
+
+# Triage rules for batch operations
+triage:
+  stale-issues:
+    query: "is:open updated:<2024-01-01"
+    apply:
+      labels:
+        - needs-triage
+```
+
+## Command Examples
+
+### Project Management
+
+```bash
+# Initialize project configuration interactively
+gh pmu init
+
+# List all issues in project
+gh pmu list
+
+# List issues filtered by status
+gh pmu list --status "In Progress"
+
+# View issue with project fields
+gh pmu view 42
+
+# Create issue with project fields
+gh pmu create --title "New feature" --status "Backlog" --priority "P1"
+
+# Update issue status
+gh pmu move 42 --status "In Progress"
+```
+
+### Sub-Issue Management
+
+```bash
+# Add existing issue as sub-issue
+gh pmu sub add 10 15  # Issue 15 becomes sub-issue of 10
+
+# Create new sub-issue
+gh pmu sub create --parent 10 --title "Subtask 1"
+
+# List sub-issues
+gh pmu sub list 10
+
+# Remove sub-issue link
+gh pmu sub remove 10 15
+```
+
+### Batch Operations
+
+```bash
+# Find untracked issues
+gh pmu intake --dry-run
+
+# Add untracked issues to project
+gh pmu intake --apply
+
+# Run triage rule
+gh pmu triage stale-issues --dry-run
+
+# Split issue from checklist in body
+gh pmu split 42 --from body
+
+# Split issue from arguments
+gh pmu split 42 "Task 1" "Task 2" "Task 3"
 ```
 
 ## Development
@@ -83,7 +162,7 @@ defaults:
 ### Prerequisites
 
 - Go 1.21+
-- GitHub CLI (`gh`)
+- GitHub CLI (`gh`) with `project` scope
 
 ### Building
 
@@ -97,10 +176,39 @@ make build
 make test
 ```
 
-### Linting
+### Integration Tests
 
 ```bash
-make lint
+# Requires authenticated gh CLI
+go test -tags=integration ./internal/api/...
+```
+
+## Project Status
+
+### Completed (Epic 1: Core Unification)
+- Project configuration initialization
+- Issue listing with project metadata
+- Issue viewing with project fields
+- Issue creation with project fields
+- Issue field updates (move)
+- Sub-issue management (add, create, list, remove)
+- Issue intake (find untracked)
+- Issue triage (batch updates)
+- Issue splitting
+
+### Planned (Epic 3: Enhanced Integration)
+- Native sub-issue handling in split
+- Cross-repository sub-issues
+- Sub-issue progress tracking
+- Recursive operations on issue trees
+
+### Removed from Scope
+- **Epic 2: Project Templates** - Redundant with native `gh project copy` command
+- **Epic 4: Template Ecosystem** - Dependent on Epic 2
+
+For project management operations like copying projects, use native `gh project` commands:
+```bash
+gh project copy 17 --source-owner myorg --target-owner myorg --title "New Project"
 ```
 
 ## Attribution

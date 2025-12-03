@@ -48,24 +48,16 @@ Eliminate the need for multiple fragmented extensions (`gh-pm`, `gh-sub-issue`) 
 - Consistent flag patterns across all commands
 - Backward-compatible with existing gh-pm configurations
 
-### Epic 2: Project Templates & Creation
-**Description:** Enable declarative project creation from YAML templates and existing GitHub projects.
+### ~~Epic 2: Project Templates & Creation~~ - REMOVED
 
-**Capabilities:**
-- Create project by copying existing GitHub project structure (`gh pmuproject create --from-project`)
-- Create project from YAML template definition (`gh pmuproject create --from-template`)
-- Export existing project structure to YAML template (`gh pmuproject export`)
-- Validate template YAML syntax and schema (`gh pmutemplate validate`)
-- List available templates (built-in and local) (`gh pmutemplate list`)
-- Show template details and preview (`gh pmutemplate show`)
-- Initialize with template selection (`gh pmuinit --from-template`)
-- Support Go template variables in templates (`{{.ProjectName}}`, `{{.Owner}}`, etc.)
+**Status:** Removed from scope (2025-12-03)
 
-**Success Criteria:**
-- Users can create consistent project structures from reusable templates
-- Templates support all GitHub Projects v2 field types
-- Template validation catches errors before project creation
-- Built-in templates cover common workflows (Kanban, Scrum, Bug Tracker)
+**Reason:** This epic provided no unique value over native `gh project` commands:
+- `gh pmu project create --from-project` → Use `gh project copy` instead
+- `gh pmu project export` → Use `gh project field-list` + `gh project view` instead
+- Template-based creation → Blocked by GitHub API (no view creation API)
+
+**Recommendation:** Use native `gh project` commands for project management. Focus gh-pmu on unique value: sub-issue hierarchy, intake/triage automation, and enhanced integration.
 
 ### Epic 3: Enhanced Integration
 **Description:** Deep integration between sub-issues and project management features.
@@ -82,19 +74,11 @@ Eliminate the need for multiple fragmented extensions (`gh-pm`, `gh-sub-issue`) 
 - Parent issues show accurate completion status
 - Bulk operations respect issue hierarchies
 
-### Epic 4: Template Ecosystem
-**Description:** Build a template sharing and discovery ecosystem.
+### ~~Epic 4: Template Ecosystem~~ - REMOVED
 
-**Capabilities:**
-- Remote template registry for community templates
-- Template inheritance (templates extending other templates)
-- Template versioning and schema migration
-- Template discovery and search
+**Status:** Removed from scope (2025-12-03)
 
-**Success Criteria:**
-- Users can discover and use community templates
-- Template authors can publish and version templates
-- Breaking schema changes handled gracefully
+**Reason:** This epic depended entirely on Epic 2 template functionality, which was removed.
 
 ---
 
@@ -113,6 +97,8 @@ Eliminate the need for multiple fragmented extensions (`gh-pm`, `gh-sub-issue`) 
 ## Constraints
 
 - **GitHub API Limitations:** Sub-issues require special GraphQL headers (`sub_issues`, `issue_types`)
+- **View Creation API:** GitHub Projects v2 views CANNOT be created via API - no `createProjectV2View` mutation exists (verified 2025-12-03). Views can only be created through UI or by copying an existing project via `copyProjectV2`.
+- **Status Field Reserved:** New projects have a default Status field that cannot be replaced via API.
 - **Workflow API:** GitHub Project workflows may not be fully creatable via API (needs verification)
 - **License Compliance:** Must maintain MIT license and proper attribution to source projects
 - **Backward Compatibility:** Existing `.gh-pmu.yml` files must continue to work
@@ -180,11 +166,11 @@ Eliminate the need for multiple fragmented extensions (`gh-pm`, `gh-sub-issue`) 
 - Open Questions → May block certain stories until resolved
 
 **Suggested Sprint Structure:**
-- **Sprint 1:** Core unification (Epic 1) - establish foundation
-- **Sprint 2:** Project templates basic (Epic 2 partial) - create from template
-- **Sprint 3:** Project templates complete (Epic 2) - export, validation, built-ins
-- **Sprint 4:** Enhanced integration (Epic 3)
-- **Future:** Template ecosystem (Epic 4)
+- **Sprint 1:** Core unification (Epic 1 partial) - establish foundation
+- **Sprint 2:** Core unification continued (Epic 1)
+- **Sprint 3:** Core unification complete (Epic 1) - intake, triage, split
+- **Sprint 4:** ~~Project templates~~ - REMOVED (redundant with native gh project commands)
+- **Future:** Enhanced integration (Epic 3) - sub-issue hierarchy, cross-repo support
 
 ---
 
@@ -193,3 +179,4 @@ Eliminate the need for multiple fragmented extensions (`gh-pm`, `gh-sub-issue`) 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2025-12-02 | scooter-indie | Initial PRD from PROPOSAL.md |
+| 1.1 | 2025-12-03 | scooter-indie | Removed Epic 2 & 4 - redundant with native gh project commands, template features blocked by API |

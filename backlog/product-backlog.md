@@ -1,8 +1,10 @@
 # Product Backlog: gh-pm-unified
 
-**Revision:** 2
-**Last Updated:** 2025-12-02
+**Revision:** 3
+**Last Updated:** 2025-12-03
 **Project Vision:** Create a unified GitHub CLI extension combining project management, sub-issue hierarchy, and project templating for comprehensive GitHub Projects v2 management.
+
+**Major Update:** Stories 2.2, 2.4-2.8 and Epic 4 blocked due to GitHub API limitation - views cannot be created programmatically.
 
 ---
 
@@ -269,48 +271,57 @@ All stories must meet these criteria:
 
 **Epic Goal:** Enable declarative project creation from YAML templates and existing GitHub projects.
 
+**API Limitation (Discovered 2025-12-03):**
+> GitHub API does not support creating project views programmatically. No `createProjectV2View` mutation exists.
+> Views can only be created through UI or via `copyProjectV2` mutation.
+>
+> **Impact:** Stories 2.2, 2.4-2.8 are blocked until GitHub adds view creation API.
+> **Recommendation:** Use `--from-project` instead of `--from-template` for full project cloning.
+
 ### Story 2.1: Create Project from Existing GitHub Project
 
 **As a** team lead setting up a new project
 **I want** to copy an existing project's structure
 **So that** I can replicate proven project configurations
 
+**Status:** Done (Sprint 4)
+
 **Acceptance Criteria:**
-- [ ] `gh pmuproject create --from-project <owner>/<number>` copies project
-- [ ] Copies all custom fields with options
-- [ ] Copies all views with configurations
-- [ ] `--title` sets the new project name
-- [ ] `--owner` specifies target owner (defaults to current user)
-- [ ] `--include-drafts` optionally copies draft issues
-- [ ] Returns new project URL
+- [x] `gh pmu project create --from-project <owner>/<number>` copies project
+- [x] Copies all custom fields with options
+- [x] Copies all views with configurations
+- [x] `--title` sets the new project name
+- [x] `--owner` specifies target owner (defaults to current user)
+- [x] `--include-drafts` optionally copies draft issues
+- [x] Returns new project URL
 
 **Story Points:** 8
 **Priority:** High
-**Status:** Backlog
-**Sprint:** -
 
 ---
 
 ### Story 2.2: Create Project from YAML Template
 
+**Status:** Won't Do - GitHub API does not support creating views
+
 **As a** developer starting a new project
 **I want** to create a project from a YAML template file
 **So that** I can use version-controlled project definitions
 
-**Acceptance Criteria:**
-- [ ] `gh pmuproject create --from-template <path>` creates project
-- [ ] Parses YAML template schema
-- [ ] Creates all defined fields with options and colors
-- [ ] Creates all defined views
-- [ ] Supports Go template variables (`{{.ProjectName}}`, etc.)
-- [ ] `--var KEY=VALUE` sets template variables
-- [ ] `--dry-run` shows what would be created
-- [ ] Returns new project URL
+**Reason for Won't Do:** GitHub GraphQL API has no `createProjectV2View` mutation. Views cannot be created programmatically. Use `--from-project` to clone existing projects instead.
+
+**Original Acceptance Criteria:**
+- [ ] ~~`gh pmu project create --from-template <path>` creates project~~
+- [ ] ~~Parses YAML template schema~~
+- [ ] ~~Creates all defined fields with options and colors~~
+- [ ] ~~Creates all defined views~~ - **BLOCKED**
+- [ ] ~~Supports Go template variables~~
+- [ ] ~~`--var KEY=VALUE` sets template variables~~
+- [ ] ~~`--dry-run` shows what would be created~~
+- [ ] ~~Returns new project URL~~
 
 **Story Points:** 13
-**Priority:** High
-**Status:** Backlog
-**Sprint:** -
+**Priority:** N/A
 
 ---
 
@@ -320,122 +331,111 @@ All stories must meet these criteria:
 **I want** to export my project structure to YAML
 **So that** I can reuse it or share it with others
 
+**Status:** Done (Sprint 4)
+
+**Note:** Useful for documentation. To recreate a project, use `--from-project` instead.
+
 **Acceptance Criteria:**
-- [ ] `gh pmuproject export <number>` exports to YAML
-- [ ] `--output <path>` writes to file (default: stdout)
-- [ ] Exports all custom fields with options
-- [ ] Exports all views with configurations
-- [ ] `--include-drafts` includes draft issues
-- [ ] `--include-workflows` includes workflow definitions
-- [ ] `--minimal` exports fields and views only
-- [ ] Output validates against template schema
+- [x] `gh pmu project export <owner>/<number>` exports to YAML
+- [x] `--output <path>` writes to file (default: stdout)
+- [x] Exports all custom fields with options
+- [x] Exports all views with configurations
+- [x] `--minimal` exports fields and views only
+- [x] Output validates against template schema
+
+**Removed from scope:**
+- ~~`--include-drafts`~~ - Drafts are project-local items, not relevant for templates
+- ~~`--include-workflows`~~ - Workflows not accessible via API
 
 **Story Points:** 8
 **Priority:** Medium
-**Status:** Backlog
-**Sprint:** -
 
 ---
 
 ### Story 2.4: Validate Template Syntax
 
+**Status:** Won't Do - No use case without Story 2.2
+
 **As a** template author
 **I want** to validate my template before using it
 **So that** I can catch errors early
 
-**Acceptance Criteria:**
-- [ ] `gh pmutemplate validate <path>` validates template
-- [ ] Checks YAML syntax
-- [ ] Validates against template schema
-- [ ] Reports field count, view count, etc.
-- [ ] Shows detailed errors with line numbers
-- [ ] Exit code 0 for valid, non-zero for invalid
+**Reason for Won't Do:** Template validation has no practical use since templates cannot create full projects (Story 2.2 blocked).
+
+**Original Acceptance Criteria:**
+- [ ] ~~`gh pmu template validate <path>` validates template~~
+- [ ] ~~Checks YAML syntax~~
+- [ ] ~~Validates against template schema~~
+- [ ] ~~Reports field count, view count, etc.~~
+- [ ] ~~Shows detailed errors with line numbers~~
+- [ ] ~~Exit code 0 for valid, non-zero for invalid~~
 
 **Story Points:** 5
-**Priority:** Medium
-**Status:** Backlog
-**Sprint:** -
+**Priority:** N/A
 
 ---
 
 ### Story 2.5: List Available Templates
 
+**Status:** Blocked - Depends on Story 2.2
+
 **As a** developer exploring options
 **I want** to list available project templates
 **So that** I can see what's available to use
 
-**Acceptance Criteria:**
-- [ ] `gh pmutemplate list` shows all templates
-- [ ] `--builtin` shows only built-in templates
-- [ ] `--local` shows only local templates (from config path)
-- [ ] Displays name, description, field count for each
-- [ ] Built-in templates embedded in binary
+**Blocked because:** No point listing templates that cannot create full projects.
 
 **Story Points:** 5
-**Priority:** Medium
-**Status:** Backlog
-**Sprint:** -
+**Priority:** N/A
 
 ---
 
 ### Story 2.6: Show Template Details
 
+**Status:** Blocked - Depends on Story 2.2
+
 **As a** developer evaluating a template
 **I want** to see detailed template contents
 **So that** I can decide if it fits my needs
 
-**Acceptance Criteria:**
-- [ ] `gh pmutemplate show <name>` displays template details
-- [ ] Shows all fields with types and options
-- [ ] Shows all views with configurations
-- [ ] Shows workflow definitions if present
-- [ ] Works with built-in and local templates
+**Blocked because:** No point showing template details that cannot create full projects.
 
 **Story Points:** 3
-**Priority:** Low
-**Status:** Backlog
-**Sprint:** -
+**Priority:** N/A
 
 ---
 
 ### Story 2.7: Built-in Project Templates
 
+**Status:** Blocked - Depends on Story 2.2
+
 **As a** developer wanting quick project setup
 **I want** built-in templates for common workflows
 **So that** I don't need to create templates from scratch
 
-**Acceptance Criteria:**
-- [ ] `kanban` template: Simple To Do → In Progress → Done
-- [ ] `scrum` template: Sprint-based with story points
-- [ ] `bug-tracker` template: Severity, resolution tracking
-- [ ] `feature-roadmap` template: Quarters, themes
-- [ ] Templates embedded in binary using Go embed
-- [ ] Each template has description and tags
+**Blocked because:** Built-in templates have no value if they cannot create full projects with views.
+
+**Workaround:** Create template projects on GitHub and use `--from-project` to clone them.
 
 **Story Points:** 8
-**Priority:** Medium
-**Status:** Backlog
-**Sprint:** -
+**Priority:** N/A
 
 ---
 
 ### Story 2.8: Initialize with Template
 
+**Status:** Blocked - Depends on Story 2.2
+
 **As a** developer setting up a new repository
 **I want** to init configuration and create project from template together
 **So that** I can bootstrap a project in one command
 
-**Acceptance Criteria:**
-- [ ] `gh pmuinit --from-template <path>` creates project and config
-- [ ] Creates project using template
-- [ ] Creates `.gh-pmu.yml` configured for new project
-- [ ] Caches field metadata automatically
-- [ ] `--from-project <owner>/<number>` works similarly
+**Blocked because:** Template-based initialization depends on Story 2.2.
+
+**Note:** `--from-project <owner>/<number>` could still be implemented as it uses `copyProjectV2`. Consider splitting into separate story.
 
 **Story Points:** 5
-**Priority:** Medium
-**Status:** Backlog
-**Sprint:** -
+**Priority:** N/A
 
 ---
 
@@ -524,6 +524,10 @@ All stories must meet these criteria:
 ## Epic: Template Ecosystem
 
 **Epic Goal:** Build a template sharing and discovery ecosystem for the community.
+
+**Status:** Blocked - Depends on Epic 2 template functionality
+
+This epic is entirely blocked because it depends on the ability to create projects from templates (Story 2.2), which is not possible due to GitHub API limitations (no view creation API).
 
 ### Story 4.1: Remote Template Registry
 

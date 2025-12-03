@@ -7,9 +7,10 @@
     "domainSpecialists": [
       "Backend-Specialist",
       "API-Integration-Specialist",
-      "PRD-Analyst",
-      "Security-Engineer"
-    ]
+      "Security-Engineer",
+      "PRD-Analyst"
+    ],
+    "primarySpecialist": "API-Integration-Specialist"
   },
   "components": {
     "frameworks": true,

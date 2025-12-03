@@ -416,3 +416,4 @@ func (c *Client) getLabelID(owner, repo, labelName string) (string, error) {
 
 	return query.Repository.Label.ID, nil
 }
+

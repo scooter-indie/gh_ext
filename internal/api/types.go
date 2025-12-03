@@ -26,8 +26,9 @@ type ProjectField struct {
 
 // FieldOption represents an option for a single-select field
 type FieldOption struct {
-	ID   string
-	Name string
+	ID    string
+	Name  string
+	Color string
 }
 
 // Issue represents a GitHub issue

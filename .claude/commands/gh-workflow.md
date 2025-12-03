@@ -6,7 +6,7 @@ This command configures Claude to automatically manage GitHub issues during deve
 
 ## Project Configuration
 
-**Read from `.gh-pmu.yml`** in the repository root:
+**Read from `.gh-pm.yml`** in the repository root:
 
 ```yaml
 project:
@@ -16,31 +16,49 @@ repositories:
     - {owner}/{repo}    # Repository in owner/repo format
 ```
 
-If `.gh-pmu.yml` doesn't exist, run `gh pmu init` to create it.
+If `.gh-pm.yml` doesn't exist, run `gh pm init` to create it.
 
 ---
 
-## Workflow Instructions
+## Critical Rules
 
-When this command is executed, Claude should follow these workflows for the remainder of the session.
-
-### Bug Workflow
-- Trigger: "I found an issue...", "There's a bug...", "finding:"
-- Create issue with "bug" label automatically
-- Wait for "work issue #X" to start
-- Move to in_progress, then in_review after commit
-- Close when user says "Done"
-
-### Enhancement Workflow
-- Trigger: "I would like...", "Can you add...", "New feature..."
-- Create issue with "enhancement" label automatically
-- Same flow as Bug workflow
-
-### Sub-Issue Workflow
-- Trigger: "Create sub-issues for...", "Break this into phases..."
-- Create sub-issues and link to parent via `gh sub-issue add`
-- Ask about epic label for parent
+**NEVER close issues automatically.** Always wait for explicit "Done" from user.
 
 ---
 
-**Note:** Replace {owner}, {repo}, {number} placeholders after running `gh pmu init`.
+## Workflow Steps
+
+### Step 1: Create Issue (AUTOMATIC)
+When user reports bug or requests enhancement, immediately create the issue.
+Report: "Created issue #[number]. Let me know when you want me to work on it."
+
+### Step 2: Work Issue (ONLY WHEN USER SAYS)
+Wait for: "work issue #X", "fix that", "implement it"
+Then: `gh pm move [number] --status in_progress`
+
+### Step 3: Commit and Review (AFTER WORK COMPLETE)
+1. Commit with issue reference
+2. `gh pm move [number] --status in_review`
+3. `gh issue comment [number] --body "Implemented in commit [hash]..."`
+
+⚠️ **STOP**: Do NOT close the issue.
+Report: "Issue #[number] ready for review. Say 'Done' to close it."
+Then WAIT for user response.
+
+### Step 4: Close Issue (ONLY WHEN USER SAYS "DONE")
+Wait for: "done", "close it", "approved", "looks good"
+Then:
+1. `gh pm move [number] --status done`
+2. `gh issue close [number]`
+
+---
+
+## Trigger Phrases
+
+**Bug:** "I found an issue...", "There's a bug...", "finding:", "This is broken..."
+**Enhancement:** "I would like...", "Can you add...", "New feature...", "Enhancement..."
+**Sub-Issues:** "Create sub-issues for...", "Break this into phases..."
+
+---
+
+**Note:** Replace {owner}, {repo}, {number} placeholders after running `gh pm init`.
