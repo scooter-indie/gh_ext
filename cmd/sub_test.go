@@ -99,7 +99,7 @@ func TestSubCreateCommand_HasParentFlag(t *testing.T) {
 
 	flag := subCmd.Flags().Lookup("parent")
 	if flag == nil {
-		t.Error("Expected --parent flag to exist")
+		t.Fatal("Expected --parent flag to exist")
 	}
 }
 
@@ -112,7 +112,7 @@ func TestSubCreateCommand_HasTitleFlag(t *testing.T) {
 
 	flag := subCmd.Flags().Lookup("title")
 	if flag == nil {
-		t.Error("Expected --title flag to exist")
+		t.Fatal("Expected --title flag to exist")
 	}
 }
 
@@ -186,7 +186,7 @@ func TestSubListCommand_HasJSONFlag(t *testing.T) {
 
 	flag := subCmd.Flags().Lookup("json")
 	if flag == nil {
-		t.Error("Expected --json flag to exist")
+		t.Fatal("Expected --json flag to exist")
 	}
 }
 
@@ -248,7 +248,7 @@ func TestSubCreateCommand_HasRepoFlag(t *testing.T) {
 
 	flag := subCmd.Flags().Lookup("repo")
 	if flag == nil {
-		t.Error("Expected --repo flag to exist")
+		t.Fatal("Expected --repo flag to exist")
 	}
 
 	// Verify short flag

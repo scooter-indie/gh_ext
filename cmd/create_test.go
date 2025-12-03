@@ -33,7 +33,7 @@ func TestCreateCommand_HasTitleFlag(t *testing.T) {
 
 	flag := createCmd.Flags().Lookup("title")
 	if flag == nil {
-		t.Error("Expected --title flag to exist")
+		t.Fatal("Expected --title flag to exist")
 	}
 }
 
@@ -46,7 +46,7 @@ func TestCreateCommand_HasBodyFlag(t *testing.T) {
 
 	flag := createCmd.Flags().Lookup("body")
 	if flag == nil {
-		t.Error("Expected --body flag to exist")
+		t.Fatal("Expected --body flag to exist")
 	}
 }
 
@@ -59,7 +59,7 @@ func TestCreateCommand_HasStatusFlag(t *testing.T) {
 
 	flag := createCmd.Flags().Lookup("status")
 	if flag == nil {
-		t.Error("Expected --status flag to exist")
+		t.Fatal("Expected --status flag to exist")
 	}
 }
 
@@ -72,7 +72,7 @@ func TestCreateCommand_HasPriorityFlag(t *testing.T) {
 
 	flag := createCmd.Flags().Lookup("priority")
 	if flag == nil {
-		t.Error("Expected --priority flag to exist")
+		t.Fatal("Expected --priority flag to exist")
 	}
 }
 
@@ -85,7 +85,7 @@ func TestCreateCommand_HasLabelFlag(t *testing.T) {
 
 	flag := createCmd.Flags().Lookup("label")
 	if flag == nil {
-		t.Error("Expected --label flag to exist")
+		t.Fatal("Expected --label flag to exist")
 	}
 }
 

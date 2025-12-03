@@ -47,7 +47,7 @@ func TestMoveCommand_HasStatusFlag(t *testing.T) {
 
 	flag := moveCmd.Flags().Lookup("status")
 	if flag == nil {
-		t.Error("Expected --status flag to exist")
+		t.Fatal("Expected --status flag to exist")
 	}
 }
 
@@ -60,7 +60,7 @@ func TestMoveCommand_HasPriorityFlag(t *testing.T) {
 
 	flag := moveCmd.Flags().Lookup("priority")
 	if flag == nil {
-		t.Error("Expected --priority flag to exist")
+		t.Fatal("Expected --priority flag to exist")
 	}
 }
 
@@ -125,7 +125,7 @@ func TestMoveCommand_HasDryRunFlag(t *testing.T) {
 
 	flag := moveCmd.Flags().Lookup("dry-run")
 	if flag == nil {
-		t.Error("Expected --dry-run flag to exist")
+		t.Fatal("Expected --dry-run flag to exist")
 	}
 }
 
@@ -138,7 +138,7 @@ func TestMoveCommand_HasYesFlag(t *testing.T) {
 
 	flag := moveCmd.Flags().Lookup("yes")
 	if flag == nil {
-		t.Error("Expected --yes flag to exist")
+		t.Fatal("Expected --yes flag to exist")
 	}
 
 	// Verify short flag

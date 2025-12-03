@@ -47,7 +47,7 @@ func TestViewCommand_HasJSONFlag(t *testing.T) {
 
 	flag := viewCmd.Flags().Lookup("json")
 	if flag == nil {
-		t.Error("Expected --json flag to exist")
+		t.Fatal("Expected --json flag to exist")
 	}
 }
 

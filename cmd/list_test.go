@@ -33,7 +33,7 @@ func TestListCommand_HasStatusFlag(t *testing.T) {
 
 	flag := listCmd.Flags().Lookup("status")
 	if flag == nil {
-		t.Error("Expected --status flag to exist")
+		t.Fatal("Expected --status flag to exist")
 	}
 }
 
@@ -46,7 +46,7 @@ func TestListCommand_HasPriorityFlag(t *testing.T) {
 
 	flag := listCmd.Flags().Lookup("priority")
 	if flag == nil {
-		t.Error("Expected --priority flag to exist")
+		t.Fatal("Expected --priority flag to exist")
 	}
 }
 
@@ -59,7 +59,7 @@ func TestListCommand_HasJSONFlag(t *testing.T) {
 
 	flag := listCmd.Flags().Lookup("json")
 	if flag == nil {
-		t.Error("Expected --json flag to exist")
+		t.Fatal("Expected --json flag to exist")
 	}
 }
 
