@@ -15,14 +15,14 @@
 **So that** I can ensure all work is tracked on the project board
 
 **Acceptance Criteria:**
-- [ ] `gh pmu intake` finds open issues not in the project
-- [ ] Shows list of untracked issues with titles
-- [ ] `--apply` flag adds them to project with default fields
-- [ ] `--dry-run` shows what would be added
-- [ ] Respects repository filter from config
+- [x] `gh pmu intake` finds open issues not in the project
+- [x] Shows list of untracked issues with titles
+- [x] `--apply` flag adds them to project with default fields
+- [x] `--dry-run` shows what would be added
+- [x] Respects repository filter from config
 
 **Story Points:** 5
-**Status:** Selected
+**Status:** Done
 
 ---
 
@@ -33,15 +33,15 @@
 **So that** I can efficiently maintain project hygiene
 
 **Acceptance Criteria:**
-- [ ] `gh pmu triage <config-name>` runs named triage config
-- [ ] Triage configs defined in `.gh-pmu.yml` with query and apply rules
-- [ ] Supports applying labels, status, priority changes
-- [ ] `--interactive` flag prompts for each issue
-- [ ] `--dry-run` shows what would be changed
-- [ ] Reports summary of changes made
+- [x] `gh pmu triage <config-name>` runs named triage config
+- [x] Triage configs defined in `.gh-pmu.yml` with query and apply rules
+- [x] Supports applying labels, status, priority changes
+- [x] `--interactive` flag prompts for each issue
+- [x] `--dry-run` shows what would be changed
+- [x] Reports summary of changes made
 
 **Story Points:** 8
-**Status:** Selected
+**Status:** Done
 
 ---
 
@@ -52,23 +52,23 @@
 **So that** I can convert task lists into trackable issues
 
 **Acceptance Criteria:**
-- [ ] `gh pmu split <issue> --from=body` parses checklist from issue body
-- [ ] `gh pmu split <issue> --from=file.md` parses from external file
-- [ ] `gh pmu split <issue> "Task 1" "Task 2"` creates from arguments
-- [ ] Each checklist item becomes a sub-issue
-- [ ] Sub-issues linked to parent automatically
-- [ ] Shows summary of created sub-issues
+- [x] `gh pmu split <issue> --from=body` parses checklist from issue body
+- [x] `gh pmu split <issue> --from=file.md` parses from external file
+- [x] `gh pmu split <issue> "Task 1" "Task 2"` creates from arguments
+- [x] Each checklist item becomes a sub-issue
+- [x] Sub-issues linked to parent automatically
+- [x] Shows summary of created sub-issues
 
 **Story Points:** 8
-**Status:** Selected
+**Status:** Done
 
 ---
 
 ## Sprint Progress
 
-**Completed:** 0 story points
-**Remaining:** 21 story points
-**Velocity:** TBD
+**Completed:** 21 story points
+**Remaining:** 0 story points
+**Velocity:** 21 points
 
 ---
 

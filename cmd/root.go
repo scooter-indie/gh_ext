@@ -22,6 +22,9 @@ Note: This is the development version. It will replace 'gh pm' and 'gh sub-issue
 	cmd.AddCommand(newCreateCommand())
 	cmd.AddCommand(newMoveCommand())
 	cmd.AddCommand(newSubCommand())
+	cmd.AddCommand(newIntakeCommand())
+	cmd.AddCommand(newTriageCommand())
+	cmd.AddCommand(newSplitCommand())
 
 	return cmd
 }

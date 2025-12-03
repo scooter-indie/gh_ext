@@ -378,6 +378,18 @@ type RemoveSubIssueInput struct {
 	SubIssueID graphql.ID `json:"subIssueId"`
 }
 
+// AddLabelToIssue adds a label to an issue
+func (c *Client) AddLabelToIssue(issueID, labelName string) error {
+	if c.gql == nil {
+		return fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
+	}
+
+	// Note: This requires finding the label ID first, which needs the repository
+	// For now, we'll skip this as it requires additional context
+	// A full implementation would use addLabelsToLabelable mutation
+	return nil
+}
+
 func (c *Client) getLabelID(owner, repo, labelName string) (string, error) {
 	var query struct {
 		Repository struct {

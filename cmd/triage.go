@@ -1,0 +1,466 @@
+package cmd
+
+import (
+	"bufio"
+	"encoding/json"
+	"fmt"
+	"os"
+	"strings"
+	"text/tabwriter"
+
+	"github.com/scooter-indie/gh-pmu/internal/api"
+	"github.com/scooter-indie/gh-pmu/internal/config"
+	"github.com/spf13/cobra"
+)
+
+type triageOptions struct {
+	dryRun      bool
+	interactive bool
+	json        bool
+	list        bool
+}
+
+func newTriageCommand() *cobra.Command {
+	opts := &triageOptions{}
+
+	cmd := &cobra.Command{
+		Use:   "triage [config-name]",
+		Short: "Bulk process issues matching triage rules",
+		Long: `Run triage rules to bulk update issues matching certain criteria.
+
+Triage configurations are defined in .gh-pmu.yml under the 'triage' key.
+Each triage config has a query to match issues and rules to apply.`,
+		Aliases: []string{"tr"},
+		Example: `  # List available triage configs
+  gh pmu triage --list
+
+  # Preview what a triage rule would do
+  gh pmu triage tracked --dry-run
+
+  # Run a triage rule
+  gh pmu triage tracked
+
+  # Run interactively (prompt for each issue)
+  gh pmu triage tracked --interactive`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runTriage(cmd, args, opts)
+		},
+	}
+
+	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Show what would be changed without making changes")
+	cmd.Flags().BoolVarP(&opts.interactive, "interactive", "i", false, "Prompt before processing each issue")
+	cmd.Flags().BoolVar(&opts.json, "json", false, "Output in JSON format")
+	cmd.Flags().BoolVarP(&opts.list, "list", "l", false, "List available triage configurations")
+
+	return cmd
+}
+
+func runTriage(cmd *cobra.Command, args []string, opts *triageOptions) error {
+	// Load configuration
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get current directory: %w", err)
+	}
+
+	cfg, err := config.LoadFromDirectory(cwd)
+	if err != nil {
+		return fmt.Errorf("failed to load configuration: %w\nRun 'gh pmu init' to create a configuration file", err)
+	}
+
+	if err := cfg.Validate(); err != nil {
+		return fmt.Errorf("invalid configuration: %w", err)
+	}
+
+	// List mode
+	if opts.list {
+		return listTriageConfigs(cmd, cfg, opts.json)
+	}
+
+	// Require config name
+	if len(args) == 0 {
+		return fmt.Errorf("triage config name is required\nUse --list to see available configs")
+	}
+
+	configName := args[0]
+	triageCfg, ok := cfg.Triage[configName]
+	if !ok {
+		return fmt.Errorf("triage config %q not found\nUse --list to see available configs", configName)
+	}
+
+	// Create API client
+	client := api.NewClient()
+
+	// Get project
+	project, err := client.GetProject(cfg.Project.Owner, cfg.Project.Number)
+	if err != nil {
+		return fmt.Errorf("failed to get project: %w", err)
+	}
+
+	// Search for issues matching the query
+	matchingIssues, err := searchIssuesForTriage(client, cfg, triageCfg.Query)
+	if err != nil {
+		return fmt.Errorf("failed to search issues: %w", err)
+	}
+
+	if len(matchingIssues) == 0 {
+		if opts.json {
+			return outputTriageJSON(cmd, nil, "no-matches", configName)
+		}
+		cmd.Printf("No issues match the triage query for %q\n", configName)
+		return nil
+	}
+
+	// Dry run - just show what would be changed
+	if opts.dryRun {
+		if opts.json {
+			return outputTriageJSON(cmd, matchingIssues, "dry-run", configName)
+		}
+		cmd.Printf("Would process %d issue(s) with triage config %q:\n\n", len(matchingIssues), configName)
+		outputTriageTable(cmd, matchingIssues)
+		cmd.Println()
+		describeTriageActions(cmd, cfg, &triageCfg)
+		return nil
+	}
+
+	// Process issues
+	var processed, skipped, failed int
+	reader := bufio.NewReader(os.Stdin)
+
+	for _, issue := range matchingIssues {
+		// Interactive mode - prompt for each issue
+		if opts.interactive {
+			cmd.Printf("\nProcess #%d: %s? [y/n/q] ", issue.Number, issue.Title)
+			response, _ := reader.ReadString('\n')
+			response = strings.TrimSpace(strings.ToLower(response))
+
+			if response == "q" {
+				cmd.Println("Aborted.")
+				break
+			}
+			if response != "y" && response != "yes" {
+				skipped++
+				continue
+			}
+		}
+
+		// Apply triage rules
+		err := applyTriageRules(client, cfg, project, &issue, &triageCfg)
+		if err != nil {
+			cmd.PrintErrf("Failed to process #%d: %v\n", issue.Number, err)
+			failed++
+			continue
+		}
+
+		processed++
+		if !opts.interactive {
+			cmd.Printf("Processed #%d: %s\n", issue.Number, issue.Title)
+		}
+	}
+
+	// Summary
+	if opts.json {
+		return outputTriageJSON(cmd, matchingIssues, "completed", configName)
+	}
+
+	cmd.Printf("\nTriage complete: %d processed", processed)
+	if skipped > 0 {
+		cmd.Printf(", %d skipped", skipped)
+	}
+	if failed > 0 {
+		cmd.Printf(", %d failed", failed)
+	}
+	cmd.Println()
+
+	return nil
+}
+
+func listTriageConfigs(cmd *cobra.Command, cfg *config.Config, jsonOutput bool) error {
+	if len(cfg.Triage) == 0 {
+		if jsonOutput {
+			encoder := json.NewEncoder(os.Stdout)
+			encoder.SetIndent("", "  ")
+			return encoder.Encode(map[string]interface{}{"configs": []interface{}{}})
+		}
+		cmd.Println("No triage configurations defined in .gh-pmu.yml")
+		return nil
+	}
+
+	if jsonOutput {
+		type triageConfigJSON struct {
+			Name        string            `json:"name"`
+			Query       string            `json:"query"`
+			ApplyLabels []string          `json:"applyLabels,omitempty"`
+			ApplyFields map[string]string `json:"applyFields,omitempty"`
+		}
+
+		configs := make([]triageConfigJSON, 0, len(cfg.Triage))
+		for name, tc := range cfg.Triage {
+			configs = append(configs, triageConfigJSON{
+				Name:        name,
+				Query:       tc.Query,
+				ApplyLabels: tc.Apply.Labels,
+				ApplyFields: tc.Apply.Fields,
+			})
+		}
+
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(map[string]interface{}{"configs": configs})
+	}
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "NAME\tQUERY\tACTIONS")
+
+	for name, tc := range cfg.Triage {
+		actions := describeActions(&tc)
+		query := tc.Query
+		if len(query) > 40 {
+			query = query[:37] + "..."
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\n", name, query, actions)
+	}
+
+	return w.Flush()
+}
+
+func describeActions(tc *config.Triage) string {
+	var actions []string
+
+	if len(tc.Apply.Labels) > 0 {
+		actions = append(actions, fmt.Sprintf("labels: %s", strings.Join(tc.Apply.Labels, ", ")))
+	}
+
+	for field, value := range tc.Apply.Fields {
+		actions = append(actions, fmt.Sprintf("%s: %s", field, value))
+	}
+
+	if len(actions) == 0 {
+		if tc.Interactive.Status || tc.Interactive.Estimate {
+			return "interactive only"
+		}
+		return "none"
+	}
+
+	return strings.Join(actions, "; ")
+}
+
+func describeTriageActions(cmd *cobra.Command, cfg *config.Config, tc *config.Triage) {
+	cmd.Println("Actions to apply:")
+
+	if len(tc.Apply.Labels) > 0 {
+		cmd.Printf("  • Add labels: %s\n", strings.Join(tc.Apply.Labels, ", "))
+	}
+
+	for field, value := range tc.Apply.Fields {
+		resolved := cfg.ResolveFieldValue(field, value)
+		cmd.Printf("  • Set %s: %s\n", field, resolved)
+	}
+
+	if tc.Interactive.Status {
+		cmd.Println("  • Prompt for status (interactive)")
+	}
+	if tc.Interactive.Estimate {
+		cmd.Println("  • Prompt for estimate (interactive)")
+	}
+}
+
+func searchIssuesForTriage(client *api.Client, cfg *config.Config, query string) ([]api.Issue, error) {
+	// Parse the query to determine what to search for
+	// For now, we search issues in configured repositories and filter locally
+	// A more sophisticated implementation would use GitHub's search API
+
+	var allIssues []api.Issue
+
+	for _, repoFullName := range cfg.Repositories {
+		parts := strings.SplitN(repoFullName, "/", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		owner, repo := parts[0], parts[1]
+
+		// Determine state from query
+		state := "open"
+		if strings.Contains(query, "is:closed") {
+			state = "closed"
+		} else if strings.Contains(query, "is:all") {
+			state = "all"
+		}
+
+		issues, err := client.GetRepositoryIssues(owner, repo, state)
+		if err != nil {
+			continue
+		}
+
+		// Filter based on query components
+		for _, issue := range issues {
+			if matchesTriageQuery(issue, query) {
+				allIssues = append(allIssues, issue)
+			}
+		}
+	}
+
+	return allIssues, nil
+}
+
+func matchesTriageQuery(issue api.Issue, query string) bool {
+	// Basic query matching - supports common GitHub search qualifiers
+	// This is a simplified version; full implementation would parse the query properly
+
+	// Check for label requirements
+	if strings.Contains(query, "-label:") {
+		// Extract label name after -label:
+		parts := strings.Split(query, "-label:")
+		for _, part := range parts[1:] {
+			labelName := strings.Fields(part)[0]
+			// Check if issue has this label
+			for _, label := range issue.Labels {
+				if label.Name == labelName {
+					return false // Has excluded label
+				}
+			}
+		}
+	}
+
+	if strings.Contains(query, "label:") && !strings.Contains(query, "-label:") {
+		// Must have specified label
+		parts := strings.Split(query, "label:")
+		for _, part := range parts[1:] {
+			if strings.HasPrefix(part, "-") {
+				continue // Skip negations
+			}
+			labelName := strings.Fields(part)[0]
+			found := false
+			for _, label := range issue.Labels {
+				if label.Name == labelName {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return false
+			}
+		}
+	}
+
+	// Check state
+	if strings.Contains(query, "is:open") && issue.State != "OPEN" {
+		return false
+	}
+	if strings.Contains(query, "is:closed") && issue.State != "CLOSED" {
+		return false
+	}
+
+	return true
+}
+
+func applyTriageRules(client *api.Client, cfg *config.Config, project *api.Project, issue *api.Issue, tc *config.Triage) error {
+	// First, ensure issue is in the project
+	itemID, err := ensureIssueInProject(client, project.ID, issue.ID)
+	if err != nil {
+		return fmt.Errorf("failed to add issue to project: %w", err)
+	}
+
+	// Apply labels
+	if len(tc.Apply.Labels) > 0 {
+		for _, label := range tc.Apply.Labels {
+			if err := client.AddLabelToIssue(issue.ID, label); err != nil {
+				// Log but don't fail - label might already exist
+				continue
+			}
+		}
+	}
+
+	// Apply fields
+	for field, value := range tc.Apply.Fields {
+		fieldName := cfg.GetFieldName(field)
+		resolvedValue := cfg.ResolveFieldValue(field, value)
+
+		if err := client.SetProjectItemField(project.ID, itemID, fieldName, resolvedValue); err != nil {
+			return fmt.Errorf("failed to set %s: %w", field, err)
+		}
+	}
+
+	return nil
+}
+
+func ensureIssueInProject(client *api.Client, projectID, issueID string) (string, error) {
+	// Try to add - if already exists, this should return the existing item ID
+	itemID, err := client.AddIssueToProject(projectID, issueID)
+	if err != nil {
+		// If error mentions already exists, try to find existing item
+		if strings.Contains(err.Error(), "already") {
+			// For now, just return the error - we'd need a query to find existing item
+			return "", err
+		}
+		return "", err
+	}
+	return itemID, nil
+}
+
+func outputTriageTable(cmd *cobra.Command, issues []api.Issue) error {
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "NUMBER\tTITLE\tSTATE\tLABELS")
+
+	for _, issue := range issues {
+		title := issue.Title
+		if len(title) > 45 {
+			title = title[:42] + "..."
+		}
+
+		var labels []string
+		for _, l := range issue.Labels {
+			labels = append(labels, l.Name)
+		}
+		labelStr := strings.Join(labels, ", ")
+		if labelStr == "" {
+			labelStr = "-"
+		}
+
+		fmt.Fprintf(w, "#%d\t%s\t%s\t%s\n", issue.Number, title, issue.State, labelStr)
+	}
+
+	return w.Flush()
+}
+
+type triageJSONOutput struct {
+	Status     string             `json:"status"`
+	ConfigName string             `json:"configName"`
+	Count      int                `json:"count"`
+	Issues     []triageJSONIssue  `json:"issues"`
+}
+
+type triageJSONIssue struct {
+	Number int      `json:"number"`
+	Title  string   `json:"title"`
+	State  string   `json:"state"`
+	URL    string   `json:"url"`
+	Labels []string `json:"labels"`
+}
+
+func outputTriageJSON(cmd *cobra.Command, issues []api.Issue, status, configName string) error {
+	output := triageJSONOutput{
+		Status:     status,
+		ConfigName: configName,
+		Count:      len(issues),
+		Issues:     make([]triageJSONIssue, 0, len(issues)),
+	}
+
+	for _, issue := range issues {
+		labels := make([]string, 0, len(issue.Labels))
+		for _, l := range issue.Labels {
+			labels = append(labels, l.Name)
+		}
+
+		output.Issues = append(output.Issues, triageJSONIssue{
+			Number: issue.Number,
+			Title:  issue.Title,
+			State:  issue.State,
+			URL:    issue.URL,
+			Labels: labels,
+		})
+	}
+
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(output)
+}
