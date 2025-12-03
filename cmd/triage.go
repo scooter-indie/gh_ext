@@ -20,6 +20,16 @@ type triageOptions struct {
 	list        bool
 }
 
+// triageClient defines the interface for API methods used by triage functions.
+// This allows for easier testing with mock implementations.
+type triageClient interface {
+	GetRepositoryIssues(owner, repo, state string) ([]api.Issue, error)
+	GetProject(owner string, number int) (*api.Project, error)
+	AddIssueToProject(projectID, issueID string) (string, error)
+	AddLabelToIssue(issueID, labelName string) error
+	SetProjectItemField(projectID, itemID, fieldName, value string) error
+}
+
 func newTriageCommand() *cobra.Command {
 	opts := &triageOptions{}
 
@@ -71,6 +81,14 @@ func runTriage(cmd *cobra.Command, args []string, opts *triageOptions) error {
 		return fmt.Errorf("invalid configuration: %w", err)
 	}
 
+	// Create API client
+	client := api.NewClient()
+
+	return runTriageWithDeps(cmd, args, opts, cfg, client, os.Stdin)
+}
+
+// runTriageWithDeps is the testable implementation of runTriage
+func runTriageWithDeps(cmd *cobra.Command, args []string, opts *triageOptions, cfg *config.Config, client triageClient, stdin *os.File) error {
 	// List mode
 	if opts.list {
 		return listTriageConfigs(cmd, cfg, opts.json)
@@ -86,9 +104,6 @@ func runTriage(cmd *cobra.Command, args []string, opts *triageOptions) error {
 	if !ok {
 		return fmt.Errorf("triage config %q not found\nUse --list to see available configs", configName)
 	}
-
-	// Create API client
-	client := api.NewClient()
 
 	// Get project
 	project, err := client.GetProject(cfg.Project.Owner, cfg.Project.Number)
@@ -124,7 +139,7 @@ func runTriage(cmd *cobra.Command, args []string, opts *triageOptions) error {
 
 	// Process issues
 	var processed, skipped, failed int
-	reader := bufio.NewReader(os.Stdin)
+	reader := bufio.NewReader(stdin)
 
 	for _, issue := range matchingIssues {
 		// Interactive mode - prompt for each issue
@@ -264,7 +279,7 @@ func describeTriageActions(cmd *cobra.Command, cfg *config.Config, tc *config.Tr
 	}
 }
 
-func searchIssuesForTriage(client *api.Client, cfg *config.Config, query string) ([]api.Issue, error) {
+func searchIssuesForTriage(client triageClient, cfg *config.Config, query string) ([]api.Issue, error) {
 	// Parse the query to determine what to search for
 	// For now, we search issues in configured repositories and filter locally
 	// A more sophisticated implementation would use GitHub's search API
@@ -353,7 +368,7 @@ func matchesTriageQuery(issue api.Issue, query string) bool {
 	return true
 }
 
-func applyTriageRules(client *api.Client, cfg *config.Config, project *api.Project, issue *api.Issue, tc *config.Triage) error {
+func applyTriageRules(client triageClient, cfg *config.Config, project *api.Project, issue *api.Issue, tc *config.Triage) error {
 	// First, ensure issue is in the project
 	itemID, err := ensureIssueInProject(client, project.ID, issue.ID)
 	if err != nil {
@@ -383,7 +398,7 @@ func applyTriageRules(client *api.Client, cfg *config.Config, project *api.Proje
 	return nil
 }
 
-func ensureIssueInProject(client *api.Client, projectID, issueID string) (string, error) {
+func ensureIssueInProject(client triageClient, projectID, issueID string) (string, error) {
 	// Try to add - if already exists, this should return the existing item ID
 	itemID, err := client.AddIssueToProject(projectID, issueID)
 	if err != nil {
