@@ -46,7 +46,26 @@ Field values are resolved through config aliases, so you can use
 shorthand values like "in_progress" which will be mapped to "In Progress".
 
 Use --recursive to update all sub-issues as well. This will traverse
-the issue tree and apply the same changes to all descendants.`,
+the issue tree and apply the same changes to all descendants.
+
+Examples:
+  # Move a single issue to "In Progress"
+  gh pmu move 42 --status in_progress
+
+  # Set both status and priority
+  gh pmu move 42 --status done --priority p1
+
+  # Recursively update an epic and all its sub-issues
+  gh pmu move 10 --status in_progress --recursive
+
+  # Preview recursive changes without applying (dry-run)
+  gh pmu move 10 --status done --recursive --dry-run
+
+  # Recursively update, skip confirmation prompt
+  gh pmu move 10 --status backlog --recursive --yes
+
+  # Limit recursion depth (default is 10)
+  gh pmu move 10 --status in_progress --recursive --depth 2`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runMove(cmd, args, opts)

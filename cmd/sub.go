@@ -29,7 +29,13 @@ useful for breaking down epics into smaller tasks.`,
 	return cmd
 }
 
+type subAddOptions struct {
+	repo string
+}
+
 func newSubAddCommand() *cobra.Command {
+	opts := &subAddOptions{}
+
 	cmd := &cobra.Command{
 		Use:   "add <parent-issue> <child-issue>",
 		Short: "Link an issue as a sub-issue of another",
@@ -38,20 +44,26 @@ func newSubAddCommand() *cobra.Command {
 Both issues must already exist. The child issue will appear as a
 sub-issue under the parent issue in GitHub's UI.
 
+Accepts issue numbers, references (owner/repo#123), or full GitHub URLs.
+
 Examples:
   gh pmu sub add 10 15        # Link issue #15 as sub-issue of #10
   gh pmu sub add #10 #15      # Same, with # prefix
-  gh pmu sub add owner/repo#10 owner/repo#15  # Full references`,
+  gh pmu sub add owner/repo#10 owner/repo#15  # Full references
+  gh pmu sub add https://github.com/owner/repo/issues/10 15  # URL for parent
+  gh pmu sub add 10 15 --repo owner/repo  # Specify default repository`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSubAdd(cmd, args)
+			return runSubAdd(cmd, args, opts)
 		},
 	}
+
+	cmd.Flags().StringVarP(&opts.repo, "repo", "R", "", "Default repository for issues (owner/repo format)")
 
 	return cmd
 }
 
-func runSubAdd(cmd *cobra.Command, args []string) error {
+func runSubAdd(cmd *cobra.Command, args []string, opts *subAddOptions) error {
 	// Load configuration
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -79,29 +91,36 @@ func runSubAdd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid child issue: %w", err)
 	}
 
-	// Default to configured repo if not specified
-	if parentOwner == "" || parentRepo == "" {
-		if len(cfg.Repositories) == 0 {
-			return fmt.Errorf("no repository specified and none configured")
-		}
-		parts := strings.Split(cfg.Repositories[0], "/")
+	// Determine default repository (--repo flag takes precedence over config)
+	defaultOwner, defaultRepo := "", ""
+	if opts.repo != "" {
+		parts := strings.Split(opts.repo, "/")
 		if len(parts) != 2 {
-			return fmt.Errorf("invalid repository format in config: %s", cfg.Repositories[0])
+			return fmt.Errorf("invalid --repo format: expected owner/repo, got %s", opts.repo)
 		}
-		parentOwner = parts[0]
-		parentRepo = parts[1]
+		defaultOwner, defaultRepo = parts[0], parts[1]
+	} else if len(cfg.Repositories) > 0 {
+		parts := strings.Split(cfg.Repositories[0], "/")
+		if len(parts) == 2 {
+			defaultOwner, defaultRepo = parts[0], parts[1]
+		}
+	}
+
+	// Apply defaults if not specified in reference
+	if parentOwner == "" || parentRepo == "" {
+		if defaultOwner == "" || defaultRepo == "" {
+			return fmt.Errorf("no repository specified and none configured (use --repo or configure in .gh-pmu.yml)")
+		}
+		parentOwner = defaultOwner
+		parentRepo = defaultRepo
 	}
 
 	if childOwner == "" || childRepo == "" {
-		if len(cfg.Repositories) == 0 {
-			return fmt.Errorf("no repository specified and none configured")
+		if defaultOwner == "" || defaultRepo == "" {
+			return fmt.Errorf("no repository specified and none configured (use --repo or configure in .gh-pmu.yml)")
 		}
-		parts := strings.Split(cfg.Repositories[0], "/")
-		if len(parts) != 2 {
-			return fmt.Errorf("invalid repository format in config: %s", cfg.Repositories[0])
-		}
-		childOwner = parts[0]
-		childRepo = parts[1]
+		childOwner = defaultOwner
+		childRepo = defaultRepo
 	}
 
 	// Create API client
@@ -152,6 +171,10 @@ type subCreateOptions struct {
 	title            string
 	body             string
 	repo             string // Target repository for the new issue (owner/repo format)
+	labels           []string
+	assignees        []string
+	milestone        string
+	project          int
 	inheritLabels    bool
 	inheritAssign    bool
 	inheritMilestone bool
@@ -189,6 +212,10 @@ Examples:
 	cmd.Flags().StringVarP(&opts.title, "title", "t", "", "Issue title (required)")
 	cmd.Flags().StringVarP(&opts.body, "body", "b", "", "Issue body")
 	cmd.Flags().StringVarP(&opts.repo, "repo", "R", "", "Repository for the new issue (owner/repo format, defaults to parent's repo)")
+	cmd.Flags().StringArrayVarP(&opts.labels, "label", "l", nil, "Add labels to the sub-issue (can be specified multiple times)")
+	cmd.Flags().StringArrayVarP(&opts.assignees, "assignee", "a", nil, "Assign users to the sub-issue (can be specified multiple times)")
+	cmd.Flags().StringVarP(&opts.milestone, "milestone", "m", "", "Set milestone (title or number)")
+	cmd.Flags().IntVar(&opts.project, "project", 0, "Add to project (project number)")
 	cmd.Flags().BoolVar(&opts.inheritLabels, "inherit-labels", true, "Inherit labels from parent (same repo only)")
 	cmd.Flags().BoolVar(&opts.inheritAssign, "inherit-assignees", false, "Inherit assignees from parent (same repo only)")
 	cmd.Flags().BoolVar(&opts.inheritMilestone, "inherit-milestone", true, "Inherit milestone from parent (same repo only)")
@@ -259,16 +286,29 @@ func runSubCreate(cmd *cobra.Command, opts *subCreateOptions) error {
 		return fmt.Errorf("failed to get parent issue #%d: %w", parentNumber, err)
 	}
 
-	// Build labels list (only inherit if same repo)
+	// Build labels list
 	var labels []string
+	// Add explicitly specified labels first
+	labels = append(labels, opts.labels...)
+	// Then add inherited labels if same repo
 	if !isCrossRepo && opts.inheritLabels && len(parentIssue.Labels) > 0 {
 		for _, l := range parentIssue.Labels {
-			labels = append(labels, l.Name)
+			// Avoid duplicates
+			isDupe := false
+			for _, existing := range labels {
+				if existing == l.Name {
+					isDupe = true
+					break
+				}
+			}
+			if !isDupe {
+				labels = append(labels, l.Name)
+			}
 		}
 	}
 
-	// Create the new issue in target repository
-	newIssue, err := client.CreateIssue(targetOwner, targetRepo, opts.title, opts.body, labels)
+	// Create the new issue in target repository with extended options
+	newIssue, err := client.CreateIssueWithOptions(targetOwner, targetRepo, opts.title, opts.body, labels, opts.assignees, opts.milestone)
 	if err != nil {
 		return fmt.Errorf("failed to create issue in %s/%s: %w", targetOwner, targetRepo, err)
 	}
@@ -281,6 +321,19 @@ func runSubCreate(cmd *cobra.Command, opts *subCreateOptions) error {
 		fmt.Printf("Created issue #%d: %s\n", newIssue.Number, newIssue.Title)
 		fmt.Printf("%s\n", newIssue.URL)
 		return nil
+	}
+
+	// Add to project if specified
+	if opts.project > 0 {
+		project, err := client.GetProject(cfg.Project.Owner, opts.project)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to find project %d: %v\n", opts.project, err)
+		} else {
+			_, err := client.AddIssueToProject(project.ID, newIssue.ID)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to add issue to project: %v\n", err)
+			}
+		}
 	}
 
 	// Output confirmation
@@ -297,7 +350,16 @@ func runSubCreate(cmd *cobra.Command, opts *subCreateOptions) error {
 		fmt.Printf("  Repo:   %s/%s\n", targetOwner, targetRepo)
 	}
 	if len(labels) > 0 {
-		fmt.Printf("  Labels: %s (inherited)\n", strings.Join(labels, ", "))
+		fmt.Printf("  Labels: %s\n", strings.Join(labels, ", "))
+	}
+	if len(opts.assignees) > 0 {
+		fmt.Printf("  Assignees: @%s\n", strings.Join(opts.assignees, ", @"))
+	}
+	if opts.milestone != "" {
+		fmt.Printf("  Milestone: %s\n", opts.milestone)
+	}
+	if opts.project > 0 {
+		fmt.Printf("  Project: #%d\n", opts.project)
 	}
 	fmt.Printf("🔗 %s\n", newIssue.URL)
 
@@ -305,24 +367,40 @@ func runSubCreate(cmd *cobra.Command, opts *subCreateOptions) error {
 }
 
 type subListOptions struct {
-	json bool
+	json     bool
+	state    string
+	limit    int
+	web      bool
+	relation string
 }
 
 func newSubListCommand() *cobra.Command {
-	opts := &subListOptions{}
+	opts := &subListOptions{
+		state:    "all",
+		relation: "children",
+	}
 
 	cmd := &cobra.Command{
-		Use:   "list <parent-issue>",
-		Short: "List sub-issues of a parent issue",
-		Long: `List all sub-issues of a parent issue.
+		Use:   "list <issue>",
+		Short: "List sub-issues of an issue",
+		Long: `List sub-issues related to an issue.
+
+By default, shows children (sub-issues) of the given issue.
+Use --relation to show parent, siblings, or all related issues.
 
 Displays the title, state, and assignee for each sub-issue,
 along with a completion count.
 
 Examples:
-  gh pmu sub list 10        # List sub-issues of issue #10
-  gh pmu sub list #10       # Same, with # prefix
-  gh pmu sub list 10 --json # Output as JSON`,
+  gh pmu sub list 10              # List sub-issues of issue #10
+  gh pmu sub list #10             # Same, with # prefix
+  gh pmu sub list 10 --json       # Output as JSON
+  gh pmu sub list 10 -s open      # Show only open sub-issues
+  gh pmu sub list 10 -n 5         # Limit to 5 results
+  gh pmu sub list 10 --web        # Open parent issue in browser
+  gh pmu sub list 10 --relation parent    # Show parent issue
+  gh pmu sub list 10 --relation siblings  # Show sibling issues
+  gh pmu sub list 10 --relation all       # Show parent, siblings, and children`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSubList(cmd, args, opts)
@@ -330,11 +408,27 @@ Examples:
 	}
 
 	cmd.Flags().BoolVar(&opts.json, "json", false, "Output in JSON format")
+	cmd.Flags().StringVarP(&opts.state, "state", "s", "all", "Filter by state: open, closed, all")
+	cmd.Flags().IntVarP(&opts.limit, "limit", "n", 0, "Maximum number of items to display (0 for no limit)")
+	cmd.Flags().BoolVarP(&opts.web, "web", "w", false, "Open issue in browser")
+	cmd.Flags().StringVar(&opts.relation, "relation", "children", "Relation to show: children, parent, siblings, all")
 
 	return cmd
 }
 
 func runSubList(cmd *cobra.Command, args []string, opts *subListOptions) error {
+	// Validate state option
+	opts.state = strings.ToLower(opts.state)
+	if opts.state != "open" && opts.state != "closed" && opts.state != "all" {
+		return fmt.Errorf("invalid state: %s (must be open, closed, or all)", opts.state)
+	}
+
+	// Validate relation option
+	opts.relation = strings.ToLower(opts.relation)
+	if opts.relation != "children" && opts.relation != "parent" && opts.relation != "siblings" && opts.relation != "all" {
+		return fmt.Errorf("invalid relation: %s (must be children, parent, siblings, or all)", opts.relation)
+	}
+
 	// Load configuration
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -350,14 +444,14 @@ func runSubList(cmd *cobra.Command, args []string, opts *subListOptions) error {
 		return fmt.Errorf("invalid configuration: %w", err)
 	}
 
-	// Parse parent issue reference
-	parentOwner, parentRepo, parentNumber, err := parseIssueReference(args[0])
+	// Parse issue reference
+	issueOwner, issueRepo, issueNumber, err := parseIssueReference(args[0])
 	if err != nil {
-		return fmt.Errorf("invalid parent issue: %w", err)
+		return fmt.Errorf("invalid issue: %w", err)
 	}
 
 	// Default to configured repo if not specified
-	if parentOwner == "" || parentRepo == "" {
+	if issueOwner == "" || issueRepo == "" {
 		if len(cfg.Repositories) == 0 {
 			return fmt.Errorf("no repository specified and none configured")
 		}
@@ -365,31 +459,114 @@ func runSubList(cmd *cobra.Command, args []string, opts *subListOptions) error {
 		if len(parts) != 2 {
 			return fmt.Errorf("invalid repository format in config: %s", cfg.Repositories[0])
 		}
-		parentOwner = parts[0]
-		parentRepo = parts[1]
+		issueOwner = parts[0]
+		issueRepo = parts[1]
 	}
 
 	// Create API client
 	client := api.NewClient()
 
-	// Get parent issue to validate it exists
-	parentIssue, err := client.GetIssue(parentOwner, parentRepo, parentNumber)
+	// Get the issue to validate it exists
+	issue, err := client.GetIssue(issueOwner, issueRepo, issueNumber)
 	if err != nil {
-		return fmt.Errorf("failed to get parent issue #%d: %w", parentNumber, err)
+		return fmt.Errorf("failed to get issue #%d: %w", issueNumber, err)
 	}
 
-	// Get sub-issues
-	subIssues, err := client.GetSubIssues(parentOwner, parentRepo, parentNumber)
-	if err != nil {
-		return fmt.Errorf("failed to get sub-issues: %w", err)
+	// Handle --web flag: open issue in browser
+	if opts.web {
+		return openViewInBrowser(issue.URL)
+	}
+
+	// Build the result based on relation
+	var result SubListResult
+	result.Issue = issue
+
+	// Get children (sub-issues)
+	if opts.relation == "children" || opts.relation == "all" {
+		subIssues, err := client.GetSubIssues(issueOwner, issueRepo, issueNumber)
+		if err != nil {
+			return fmt.Errorf("failed to get sub-issues: %w", err)
+		}
+		result.Children = filterSubIssuesByState(subIssues, opts.state)
+	}
+
+	// Get parent
+	if opts.relation == "parent" || opts.relation == "siblings" || opts.relation == "all" {
+		parentIssue, err := client.GetParentIssue(issueOwner, issueRepo, issueNumber)
+		if err == nil && parentIssue != nil {
+			result.Parent = parentIssue
+		}
+	}
+
+	// Get siblings (other children of parent)
+	if opts.relation == "siblings" || opts.relation == "all" {
+		if result.Parent != nil {
+			// Get parent's repo info
+			parentOwner := result.Parent.Repository.Owner
+			parentRepo := result.Parent.Repository.Name
+			if parentOwner == "" {
+				parentOwner = issueOwner
+			}
+			if parentRepo == "" {
+				parentRepo = issueRepo
+			}
+
+			siblings, err := client.GetSubIssues(parentOwner, parentRepo, result.Parent.Number)
+			if err == nil {
+				// Filter out the current issue from siblings
+				var filteredSiblings []api.SubIssue
+				for _, sib := range siblings {
+					if sib.Number != issueNumber {
+						filteredSiblings = append(filteredSiblings, sib)
+					}
+				}
+				result.Siblings = filterSubIssuesByState(filteredSiblings, opts.state)
+			}
+		}
+	}
+
+	// Apply limit
+	if opts.limit > 0 {
+		if len(result.Children) > opts.limit {
+			result.Children = result.Children[:opts.limit]
+		}
+		if len(result.Siblings) > opts.limit {
+			result.Siblings = result.Siblings[:opts.limit]
+		}
 	}
 
 	// Output
 	if opts.json {
-		return outputSubListJSON(subIssues, parentIssue)
+		return outputSubListJSONExtended(result, opts.relation)
 	}
 
-	return outputSubListTable(subIssues, parentIssue)
+	return outputSubListTableExtended(result, opts.relation)
+}
+
+// SubListResult holds all the data for sub list output
+type SubListResult struct {
+	Issue    *api.Issue
+	Parent   *api.Issue
+	Children []api.SubIssue
+	Siblings []api.SubIssue
+}
+
+// filterSubIssuesByState filters sub-issues by state (open, closed, all)
+func filterSubIssuesByState(subIssues []api.SubIssue, state string) []api.SubIssue {
+	if state == "all" {
+		return subIssues
+	}
+
+	var filtered []api.SubIssue
+	for _, sub := range subIssues {
+		subState := strings.ToUpper(sub.State)
+		if state == "open" && subState == "OPEN" {
+			filtered = append(filtered, sub)
+		} else if state == "closed" && subState == "CLOSED" {
+			filtered = append(filtered, sub)
+		}
+	}
+	return filtered
 }
 
 // SubListJSONOutput represents the JSON output for sub list command
@@ -496,29 +673,222 @@ func outputSubListTable(subIssues []api.SubIssue, parent *api.Issue) error {
 	return nil
 }
 
-func newSubRemoveCommand() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "remove <parent-issue> <child-issue>",
-		Short: "Remove a sub-issue link from a parent issue",
-		Long: `Remove the sub-issue relationship between a parent and child issue.
+// SubListJSONExtended represents extended JSON output for sub list with relation support
+type SubListJSONExtended struct {
+	Issue    SubListIssueJSON   `json:"issue"`
+	Parent   *SubListParentJSON `json:"parent,omitempty"`
+	Children []SubListItem      `json:"children,omitempty"`
+	Siblings []SubListItem      `json:"siblings,omitempty"`
+	Summary  SubListSummary     `json:"summary"`
+}
 
-This does NOT delete the child issue, only removes the parent-child link.
-The child issue will become a standalone issue again.
+type SubListIssueJSON struct {
+	Number int    `json:"number"`
+	Title  string `json:"title"`
+	State  string `json:"state"`
+	URL    string `json:"url"`
+}
 
-Examples:
-  gh pmu sub remove 10 15        # Unlink issue #15 from parent #10
-  gh pmu sub remove #10 #15      # Same, with # prefix
-  gh pmu sub remove owner/repo#10 owner/repo#15  # Full references`,
-		Args: cobra.ExactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSubRemove(cmd, args)
+type SubListParentJSON struct {
+	Number int    `json:"number"`
+	Title  string `json:"title"`
+	State  string `json:"state"`
+	URL    string `json:"url"`
+}
+
+func outputSubListJSONExtended(result SubListResult, relation string) error {
+	output := SubListJSONExtended{
+		Issue: SubListIssueJSON{
+			Number: result.Issue.Number,
+			Title:  result.Issue.Title,
+			State:  result.Issue.State,
+			URL:    result.Issue.URL,
 		},
 	}
+
+	// Add parent if present
+	if result.Parent != nil {
+		output.Parent = &SubListParentJSON{
+			Number: result.Parent.Number,
+			Title:  result.Parent.Title,
+			State:  result.Parent.State,
+			URL:    result.Parent.URL,
+		}
+	}
+
+	// Add children
+	if len(result.Children) > 0 {
+		output.Children = make([]SubListItem, 0, len(result.Children))
+		for _, sub := range result.Children {
+			repoStr := ""
+			if sub.Repository.Owner != "" && sub.Repository.Name != "" {
+				repoStr = sub.Repository.Owner + "/" + sub.Repository.Name
+			}
+			output.Children = append(output.Children, SubListItem{
+				Number:     sub.Number,
+				Title:      sub.Title,
+				State:      sub.State,
+				URL:        sub.URL,
+				Repository: repoStr,
+			})
+		}
+	}
+
+	// Add siblings
+	if len(result.Siblings) > 0 {
+		output.Siblings = make([]SubListItem, 0, len(result.Siblings))
+		for _, sub := range result.Siblings {
+			repoStr := ""
+			if sub.Repository.Owner != "" && sub.Repository.Name != "" {
+				repoStr = sub.Repository.Owner + "/" + sub.Repository.Name
+			}
+			output.Siblings = append(output.Siblings, SubListItem{
+				Number:     sub.Number,
+				Title:      sub.Title,
+				State:      sub.State,
+				URL:        sub.URL,
+				Repository: repoStr,
+			})
+		}
+	}
+
+	// Build summary
+	for _, sub := range result.Children {
+		output.Summary.Total++
+		if sub.State == "CLOSED" {
+			output.Summary.Closed++
+		} else {
+			output.Summary.Open++
+		}
+	}
+
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(output)
+}
+
+func outputSubListTableExtended(result SubListResult, relation string) error {
+	// Header
+	fmt.Printf("Issue #%d: %s\n", result.Issue.Number, result.Issue.Title)
+	fmt.Println()
+
+	// Show parent if requested and present
+	if (relation == "parent" || relation == "all") && result.Parent != nil {
+		fmt.Println("Parent:")
+		state := "OPEN"
+		if result.Parent.State == "CLOSED" {
+			state = "CLOSED"
+		}
+		fmt.Printf("  #%d - %s [%s]\n", result.Parent.Number, result.Parent.Title, state)
+		fmt.Println()
+	}
+
+	// Show children if requested
+	if relation == "children" || relation == "all" {
+		fmt.Println("Children:")
+		if len(result.Children) == 0 {
+			fmt.Println("  No sub-issues found.")
+		} else {
+			printSubIssueList(result.Children, result.Issue)
+		}
+		fmt.Println()
+	}
+
+	// Show siblings if requested
+	if relation == "siblings" || relation == "all" {
+		fmt.Println("Siblings:")
+		if result.Parent == nil {
+			fmt.Println("  No parent issue (not a sub-issue).")
+		} else if len(result.Siblings) == 0 {
+			fmt.Println("  No sibling issues found.")
+		} else {
+			printSubIssueList(result.Siblings, result.Issue)
+		}
+		fmt.Println()
+	}
+
+	// Show progress summary for children
+	if (relation == "children" || relation == "all") && len(result.Children) > 0 {
+		closedCount := 0
+		for _, sub := range result.Children {
+			if sub.State == "CLOSED" {
+				closedCount++
+			}
+		}
+		fmt.Printf("Progress: %d/%d complete\n", closedCount, len(result.Children))
+	}
+
+	return nil
+}
+
+// printSubIssueList prints a list of sub-issues with state checkboxes
+func printSubIssueList(subIssues []api.SubIssue, referenceIssue *api.Issue) {
+	// Check if any sub-issues are in different repos
+	refRepo := ""
+	if referenceIssue.Repository.Owner != "" && referenceIssue.Repository.Name != "" {
+		refRepo = referenceIssue.Repository.Owner + "/" + referenceIssue.Repository.Name
+	}
+
+	hasCrossRepo := false
+	for _, sub := range subIssues {
+		subRepo := sub.Repository.Owner + "/" + sub.Repository.Name
+		if subRepo != refRepo && subRepo != "/" {
+			hasCrossRepo = true
+			break
+		}
+	}
+
+	for _, sub := range subIssues {
+		state := "[ ]"
+		if sub.State == "CLOSED" {
+			state = "[x]"
+		}
+
+		// Show repo info if there are cross-repo sub-issues
+		if hasCrossRepo && sub.Repository.Owner != "" && sub.Repository.Name != "" {
+			subRepo := sub.Repository.Owner + "/" + sub.Repository.Name
+			fmt.Printf("  %s %s#%d - %s\n", state, subRepo, sub.Number, sub.Title)
+		} else {
+			fmt.Printf("  %s #%d - %s\n", state, sub.Number, sub.Title)
+		}
+	}
+}
+
+type subRemoveOptions struct {
+	force bool
+}
+
+func newSubRemoveCommand() *cobra.Command {
+	opts := &subRemoveOptions{}
+
+	cmd := &cobra.Command{
+		Use:   "remove <parent-issue> <child-issue>...",
+		Short: "Remove sub-issue links from a parent issue",
+		Long: `Remove the sub-issue relationship between a parent and one or more child issues.
+
+This does NOT delete the child issues, only removes the parent-child links.
+The child issues will become standalone issues again.
+
+Multiple child issues can be specified to remove in batch.
+
+Examples:
+  gh pmu sub remove 10 15           # Unlink issue #15 from parent #10
+  gh pmu sub remove #10 #15         # Same, with # prefix
+  gh pmu sub remove 10 15 16 17     # Unlink multiple sub-issues at once
+  gh pmu sub remove 10 15 --force   # Skip any confirmation prompts
+  gh pmu sub remove owner/repo#10 owner/repo#15  # Full references`,
+		Args: cobra.MinimumNArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runSubRemove(cmd, args, opts)
+		},
+	}
+
+	cmd.Flags().BoolVarP(&opts.force, "force", "f", false, "Skip confirmation prompts")
 
 	return cmd
 }
 
-func runSubRemove(cmd *cobra.Command, args []string) error {
+func runSubRemove(cmd *cobra.Command, args []string, opts *subRemoveOptions) error {
 	// Load configuration
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -540,35 +910,21 @@ func runSubRemove(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid parent issue: %w", err)
 	}
 
-	// Parse child issue reference
-	childOwner, childRepo, childNumber, err := parseIssueReference(args[1])
-	if err != nil {
-		return fmt.Errorf("invalid child issue: %w", err)
+	// Default to configured repo if not specified for parent
+	defaultOwner, defaultRepo := "", ""
+	if len(cfg.Repositories) > 0 {
+		parts := strings.Split(cfg.Repositories[0], "/")
+		if len(parts) == 2 {
+			defaultOwner, defaultRepo = parts[0], parts[1]
+		}
 	}
 
-	// Default to configured repo if not specified
 	if parentOwner == "" || parentRepo == "" {
-		if len(cfg.Repositories) == 0 {
+		if defaultOwner == "" || defaultRepo == "" {
 			return fmt.Errorf("no repository specified and none configured")
 		}
-		parts := strings.Split(cfg.Repositories[0], "/")
-		if len(parts) != 2 {
-			return fmt.Errorf("invalid repository format in config: %s", cfg.Repositories[0])
-		}
-		parentOwner = parts[0]
-		parentRepo = parts[1]
-	}
-
-	if childOwner == "" || childRepo == "" {
-		if len(cfg.Repositories) == 0 {
-			return fmt.Errorf("no repository specified and none configured")
-		}
-		parts := strings.Split(cfg.Repositories[0], "/")
-		if len(parts) != 2 {
-			return fmt.Errorf("invalid repository format in config: %s", cfg.Repositories[0])
-		}
-		childOwner = parts[0]
-		childRepo = parts[1]
+		parentOwner = defaultOwner
+		parentRepo = defaultRepo
 	}
 
 	// Create API client
@@ -580,27 +936,93 @@ func runSubRemove(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get parent issue #%d: %w", parentNumber, err)
 	}
 
-	// Validate child issue exists
-	childIssue, err := client.GetIssue(childOwner, childRepo, childNumber)
-	if err != nil {
-		return fmt.Errorf("failed to get child issue #%d: %w", childNumber, err)
+	// Parse all child issue references (args[1:])
+	type childRef struct {
+		owner  string
+		repo   string
+		number int
 	}
+	var children []childRef
 
-	// Remove sub-issue link
-	err = client.RemoveSubIssue(parentIssue.ID, childIssue.ID)
-	if err != nil {
-		// Check if not linked
-		errMsg := strings.ToLower(err.Error())
-		if strings.Contains(errMsg, "not a sub-issue") || strings.Contains(errMsg, "not found") {
-			return fmt.Errorf("issue #%d is not a sub-issue of #%d", childNumber, parentNumber)
+	for i := 1; i < len(args); i++ {
+		childOwner, childRepo, childNumber, err := parseIssueReference(args[i])
+		if err != nil {
+			return fmt.Errorf("invalid child issue %s: %w", args[i], err)
 		}
-		return fmt.Errorf("failed to remove sub-issue link: %w", err)
+
+		// Default to configured repo if not specified
+		if childOwner == "" || childRepo == "" {
+			if defaultOwner == "" || defaultRepo == "" {
+				return fmt.Errorf("no repository specified for issue %s and none configured", args[i])
+			}
+			childOwner = defaultOwner
+			childRepo = defaultRepo
+		}
+
+		children = append(children, childRef{
+			owner:  childOwner,
+			repo:   childRepo,
+			number: childNumber,
+		})
 	}
 
-	// Output confirmation
-	fmt.Printf("✓ Removed sub-issue link: #%d is no longer a sub-issue of #%d\n", childNumber, parentNumber)
-	fmt.Printf("  Former parent: %s\n", parentIssue.Title)
-	fmt.Printf("  Unlinked:      %s\n", childIssue.Title)
+	// Track results for batch operations
+	var successCount, failCount int
+	var results []string
+
+	// Process each child issue
+	for _, child := range children {
+		// Get child issue
+		childIssue, err := client.GetIssue(child.owner, child.repo, child.number)
+		if err != nil {
+			failCount++
+			results = append(results, fmt.Sprintf("✗ #%d: failed to get issue: %v", child.number, err))
+			continue
+		}
+
+		// Remove sub-issue link
+		err = client.RemoveSubIssue(parentIssue.ID, childIssue.ID)
+		if err != nil {
+			failCount++
+			// Check if not linked
+			errMsg := strings.ToLower(err.Error())
+			if strings.Contains(errMsg, "not a sub-issue") || strings.Contains(errMsg, "not found") {
+				results = append(results, fmt.Sprintf("✗ #%d: not a sub-issue of #%d", child.number, parentNumber))
+			} else {
+				results = append(results, fmt.Sprintf("✗ #%d: %v", child.number, err))
+			}
+			continue
+		}
+
+		successCount++
+		results = append(results, fmt.Sprintf("✓ #%d: %s", child.number, childIssue.Title))
+	}
+
+	// Output results
+	if len(children) == 1 {
+		// Single child - use simple output format
+		if successCount == 1 {
+			fmt.Printf("✓ Removed sub-issue link: #%d is no longer a sub-issue of #%d\n", children[0].number, parentNumber)
+			fmt.Printf("  Former parent: %s\n", parentIssue.Title)
+		} else {
+			// Print the failure message
+			for _, r := range results {
+				fmt.Println(r)
+			}
+			return fmt.Errorf("failed to remove sub-issue")
+		}
+	} else {
+		// Multiple children - use batch output format
+		fmt.Printf("Removing sub-issues from parent #%d: %s\n\n", parentNumber, parentIssue.Title)
+		for _, r := range results {
+			fmt.Println("  " + r)
+		}
+		fmt.Printf("\nSummary: %d succeeded, %d failed\n", successCount, failCount)
+
+		if failCount > 0 && successCount == 0 {
+			return fmt.Errorf("all removals failed")
+		}
+	}
 
 	return nil
 }

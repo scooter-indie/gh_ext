@@ -416,3 +416,165 @@ func (c *Client) getLabelID(owner, repo, labelName string) (string, error) {
 
 	return query.Repository.Label.ID, nil
 }
+
+// getUserID gets a user's ID from their login
+func (c *Client) getUserID(login string) (string, error) {
+	var query struct {
+		User struct {
+			ID string
+		} `graphql:"user(login: $login)"`
+	}
+
+	variables := map[string]interface{}{
+		"login": graphql.String(login),
+	}
+
+	err := c.gql.Query("GetUserID", &query, variables)
+	if err != nil {
+		return "", fmt.Errorf("failed to get user ID for %s: %w", login, err)
+	}
+
+	if query.User.ID == "" {
+		return "", fmt.Errorf("user %q not found", login)
+	}
+
+	return query.User.ID, nil
+}
+
+// getMilestoneID gets a milestone ID from the repository
+func (c *Client) getMilestoneID(owner, repo, milestone string) (string, error) {
+	var query struct {
+		Repository struct {
+			Milestones struct {
+				Nodes []struct {
+					ID     string
+					Title  string
+					Number int
+				}
+			} `graphql:"milestones(first: 100, states: OPEN)"`
+		} `graphql:"repository(owner: $owner, name: $repo)"`
+	}
+
+	variables := map[string]interface{}{
+		"owner": graphql.String(owner),
+		"repo":  graphql.String(repo),
+	}
+
+	err := c.gql.Query("GetMilestones", &query, variables)
+	if err != nil {
+		return "", fmt.Errorf("failed to get milestones: %w", err)
+	}
+
+	// Try to match by title or number
+	for _, m := range query.Repository.Milestones.Nodes {
+		if m.Title == milestone || fmt.Sprintf("%d", m.Number) == milestone {
+			return m.ID, nil
+		}
+	}
+
+	return "", fmt.Errorf("milestone %q not found", milestone)
+}
+
+// CreateIssueWithOptions creates an issue with extended options
+func (c *Client) CreateIssueWithOptions(owner, repo, title, body string, labels, assignees []string, milestone string) (*Issue, error) {
+	if c.gql == nil {
+		return nil, fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
+	}
+
+	// First, get the repository ID
+	repoID, err := c.getRepositoryID(owner, repo)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get label IDs if labels are provided
+	var labelIDs []graphql.ID
+	if len(labels) > 0 {
+		for _, labelName := range labels {
+			labelID, err := c.getLabelID(owner, repo, labelName)
+			if err != nil {
+				// Skip labels that don't exist
+				continue
+			}
+			labelIDs = append(labelIDs, graphql.ID(labelID))
+		}
+	}
+
+	// Get assignee IDs
+	var assigneeIDs []graphql.ID
+	if len(assignees) > 0 {
+		for _, login := range assignees {
+			userID, err := c.getUserID(login)
+			if err != nil {
+				// Skip users that don't exist
+				continue
+			}
+			assigneeIDs = append(assigneeIDs, graphql.ID(userID))
+		}
+	}
+
+	// Get milestone ID
+	var milestoneID *graphql.ID
+	if milestone != "" {
+		mID, err := c.getMilestoneID(owner, repo, milestone)
+		if err != nil {
+			// Non-fatal, just warn
+			fmt.Printf("Warning: milestone %q not found\n", milestone)
+		} else {
+			gqlID := graphql.ID(mID)
+			milestoneID = &gqlID
+		}
+	}
+
+	var mutation struct {
+		CreateIssue struct {
+			Issue struct {
+				ID     string
+				Number int
+				Title  string
+				Body   string
+				State  string
+				URL    string `graphql:"url"`
+			}
+		} `graphql:"createIssue(input: $input)"`
+	}
+
+	input := CreateIssueInput{
+		RepositoryID: graphql.ID(repoID),
+		Title:        graphql.String(title),
+	}
+	if body != "" {
+		input.Body = graphql.String(body)
+	}
+	if len(labelIDs) > 0 {
+		input.LabelIDs = &labelIDs
+	}
+	if len(assigneeIDs) > 0 {
+		input.AssigneeIDs = &assigneeIDs
+	}
+	if milestoneID != nil {
+		input.MilestoneID = milestoneID
+	}
+
+	variables := map[string]interface{}{
+		"input": input,
+	}
+
+	err = c.gql.Mutate("CreateIssue", &mutation, variables)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create issue: %w", err)
+	}
+
+	return &Issue{
+		ID:     mutation.CreateIssue.Issue.ID,
+		Number: mutation.CreateIssue.Issue.Number,
+		Title:  mutation.CreateIssue.Issue.Title,
+		Body:   mutation.CreateIssue.Issue.Body,
+		State:  mutation.CreateIssue.Issue.State,
+		URL:    mutation.CreateIssue.Issue.URL,
+		Repository: Repository{
+			Owner: owner,
+			Name:  repo,
+		},
+	}, nil
+}

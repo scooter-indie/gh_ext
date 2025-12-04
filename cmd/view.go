@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -13,7 +15,9 @@ import (
 )
 
 type viewOptions struct {
-	json bool
+	json     bool
+	web      bool
+	comments bool
 }
 
 func newViewCommand() *cobra.Command {
@@ -35,6 +39,8 @@ Also shows sub-issues if any exist, and parent issue if this is a sub-issue.`,
 	}
 
 	cmd.Flags().BoolVar(&opts.json, "json", false, "Output in JSON format")
+	cmd.Flags().BoolVarP(&opts.web, "web", "w", false, "Open issue in browser")
+	cmd.Flags().BoolVarP(&opts.comments, "comments", "c", false, "Show issue comments")
 
 	return cmd
 }
@@ -83,6 +89,11 @@ func runView(cmd *cobra.Command, args []string, opts *viewOptions) error {
 		return fmt.Errorf("failed to get issue: %w", err)
 	}
 
+	// Handle --web flag: open issue in browser
+	if opts.web {
+		return openViewInBrowser(issue.URL)
+	}
+
 	// Fetch project items to get field values for this issue
 	project, err := client.GetProject(cfg.Project.Owner, cfg.Project.Number)
 	if err != nil {
@@ -117,12 +128,36 @@ func runView(cmd *cobra.Command, args []string, opts *viewOptions) error {
 		parentIssue = nil
 	}
 
-	// Output
-	if opts.json {
-		return outputViewJSON(cmd, issue, fieldValues, subIssues, parentIssue)
+	// Fetch comments if requested
+	var comments []api.Comment
+	if opts.comments {
+		comments, err = client.GetIssueComments(owner, repo, number)
+		if err != nil {
+			// Non-fatal - continue without comments
+			comments = nil
+		}
 	}
 
-	return outputViewTable(cmd, issue, fieldValues, subIssues, parentIssue)
+	// Output
+	if opts.json {
+		return outputViewJSON(cmd, issue, fieldValues, subIssues, parentIssue, comments)
+	}
+
+	return outputViewTable(cmd, issue, fieldValues, subIssues, parentIssue, comments)
+}
+
+// openViewInBrowser opens the given URL in the default browser
+func openViewInBrowser(url string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "windows":
+		cmd = exec.Command("cmd", "/c", "start", url)
+	default: // linux, freebsd, etc.
+		cmd = exec.Command("xdg-open", url)
+	}
+	return cmd.Start()
 }
 
 // ViewJSONOutput represents the JSON output for view command
@@ -140,6 +175,14 @@ type ViewJSONOutput struct {
 	SubIssues   []SubIssueJSON    `json:"subIssues,omitempty"`
 	SubProgress *SubProgressJSON  `json:"subProgress,omitempty"`
 	ParentIssue *ParentIssueJSON  `json:"parentIssue,omitempty"`
+	Comments    []CommentJSON     `json:"comments,omitempty"`
+}
+
+// CommentJSON represents a comment in JSON output
+type CommentJSON struct {
+	Author    string `json:"author"`
+	Body      string `json:"body"`
+	CreatedAt string `json:"createdAt"`
 }
 
 // SubProgressJSON represents sub-issue progress in JSON output
@@ -164,7 +207,7 @@ type ParentIssueJSON struct {
 	URL    string `json:"url"`
 }
 
-func outputViewJSON(cmd *cobra.Command, issue *api.Issue, fieldValues []api.FieldValue, subIssues []api.SubIssue, parentIssue *api.Issue) error {
+func outputViewJSON(cmd *cobra.Command, issue *api.Issue, fieldValues []api.FieldValue, subIssues []api.SubIssue, parentIssue *api.Issue, comments []api.Comment) error {
 	output := ViewJSONOutput{
 		Number:      issue.Number,
 		Title:       issue.Title,
@@ -229,12 +272,23 @@ func outputViewJSON(cmd *cobra.Command, issue *api.Issue, fieldValues []api.Fiel
 		}
 	}
 
+	if len(comments) > 0 {
+		output.Comments = make([]CommentJSON, 0, len(comments))
+		for _, c := range comments {
+			output.Comments = append(output.Comments, CommentJSON{
+				Author:    c.Author,
+				Body:      c.Body,
+				CreatedAt: c.CreatedAt,
+			})
+		}
+	}
+
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(output)
 }
 
-func outputViewTable(cmd *cobra.Command, issue *api.Issue, fieldValues []api.FieldValue, subIssues []api.SubIssue, parentIssue *api.Issue) error {
+func outputViewTable(cmd *cobra.Command, issue *api.Issue, fieldValues []api.FieldValue, subIssues []api.SubIssue, parentIssue *api.Issue, comments []api.Comment) error {
 	// Title and state
 	fmt.Printf("%s #%d\n", issue.Title, issue.Number)
 	fmt.Printf("State: %s\n", issue.State)
@@ -322,6 +376,17 @@ func outputViewTable(cmd *cobra.Command, issue *api.Issue, fieldValues []api.Fie
 		fmt.Println(issue.Body)
 	}
 
+	// Comments
+	if len(comments) > 0 {
+		fmt.Println()
+		fmt.Printf("Comments (%d):\n", len(comments))
+		for _, c := range comments {
+			fmt.Println()
+			fmt.Printf("@%s commented on %s:\n", c.Author, c.CreatedAt)
+			fmt.Println(c.Body)
+		}
+	}
+
 	return nil
 }
 
@@ -360,9 +425,20 @@ func parseIssueNumber(s string) (int, error) {
 }
 
 // parseIssueReference parses an issue reference string
-// Accepts formats: "123", "#123", or "owner/repo#123"
+// Accepts formats: "123", "#123", "owner/repo#123", or full GitHub issue URL
 // Returns owner, repo, number (owner/repo may be empty if not specified)
 func parseIssueReference(s string) (owner, repo string, number int, err error) {
+	// Check for GitHub URL format
+	// Formats: https://github.com/owner/repo/issues/123
+	//          https://github.com/owner/repo/issues/123#issuecomment-...
+	if strings.HasPrefix(s, "https://github.com/") || strings.HasPrefix(s, "http://github.com/") {
+		owner, repo, number, err = parseIssueURL(s)
+		if err != nil {
+			return "", "", 0, err
+		}
+		return owner, repo, number, nil
+	}
+
 	// Check for owner/repo#number format
 	if idx := strings.Index(s, "#"); idx > 0 {
 		// Has # with something before it - could be owner/repo#number
@@ -388,4 +464,46 @@ func parseIssueReference(s string) (owner, repo string, number int, err error) {
 	}
 
 	return "", "", number, nil
+}
+
+// parseIssueURL parses a GitHub issue URL and extracts owner, repo, and number
+// Supports formats:
+//   - https://github.com/owner/repo/issues/123
+//   - https://github.com/owner/repo/issues/123#issuecomment-...
+func parseIssueURL(url string) (owner, repo string, number int, err error) {
+	// Remove protocol prefix
+	url = strings.TrimPrefix(url, "https://")
+	url = strings.TrimPrefix(url, "http://")
+
+	// Remove github.com prefix
+	if !strings.HasPrefix(url, "github.com/") {
+		return "", "", 0, fmt.Errorf("invalid GitHub URL: not a github.com URL")
+	}
+	url = strings.TrimPrefix(url, "github.com/")
+
+	// Split path parts: owner/repo/issues/number[#anchor]
+	parts := strings.Split(url, "/")
+	if len(parts) < 4 {
+		return "", "", 0, fmt.Errorf("invalid GitHub issue URL format")
+	}
+
+	owner = parts[0]
+	repo = parts[1]
+
+	if parts[2] != "issues" {
+		return "", "", 0, fmt.Errorf("URL is not an issue URL (expected /issues/)")
+	}
+
+	// Parse issue number (may have anchor suffix like #issuecomment-123)
+	numStr := parts[3]
+	if anchorIdx := strings.Index(numStr, "#"); anchorIdx > 0 {
+		numStr = numStr[:anchorIdx]
+	}
+
+	number, err = parseIssueNumber(numStr)
+	if err != nil {
+		return "", "", 0, fmt.Errorf("invalid issue number in URL: %s", numStr)
+	}
+
+	return owner, repo, number, nil
 }

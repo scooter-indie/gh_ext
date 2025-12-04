@@ -303,6 +303,44 @@ func TestSubAddCommand_HelpShowsCrossRepoExample(t *testing.T) {
 	}
 }
 
+func TestSubAddCommand_HasRepoFlag(t *testing.T) {
+	cmd := NewRootCommand()
+	subCmd, _, err := cmd.Find([]string{"sub", "add"})
+	if err != nil {
+		t.Fatalf("sub add command not found: %v", err)
+	}
+
+	flag := subCmd.Flags().Lookup("repo")
+	if flag == nil {
+		t.Fatal("Expected --repo flag to exist")
+	}
+
+	// Verify short flag
+	if flag.Shorthand != "R" {
+		t.Errorf("Expected --repo shorthand to be 'R', got '%s'", flag.Shorthand)
+	}
+}
+
+func TestSubAddCommand_AcceptsURLs(t *testing.T) {
+	cmd := NewRootCommand()
+	cmd.SetArgs([]string{"sub", "add", "--help"})
+
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("sub add help failed: %v", err)
+	}
+
+	output := buf.String()
+	// Verify URL format is documented
+	if !bytes.Contains([]byte(output), []byte("https://github.com/")) {
+		t.Error("Expected help to document GitHub URL format")
+	}
+}
+
 // ============================================================================
 // subCreateOptions Tests
 // ============================================================================
@@ -795,6 +833,9 @@ func TestSubCreateCommand_FlagShorthands(t *testing.T) {
 		{"title", "t"},
 		{"body", "b"},
 		{"repo", "R"},
+		{"label", "l"},
+		{"assignee", "a"},
+		{"milestone", "m"},
 	}
 
 	for _, tt := range tests {
@@ -807,5 +848,703 @@ func TestSubCreateCommand_FlagShorthands(t *testing.T) {
 				t.Errorf("Expected --%s shorthand to be '%s', got '%s'", tt.flag, tt.shorthand, flag.Shorthand)
 			}
 		})
+	}
+}
+
+func TestSubCreateCommand_HasProjectFlag(t *testing.T) {
+	cmd := NewRootCommand()
+	subCmd, _, err := cmd.Find([]string{"sub", "create"})
+	if err != nil {
+		t.Fatalf("sub create command not found: %v", err)
+	}
+
+	flag := subCmd.Flags().Lookup("project")
+	if flag == nil {
+		t.Fatal("Expected --project flag to exist")
+	}
+}
+
+func TestSubCreateCommand_HasLabelFlag(t *testing.T) {
+	cmd := NewRootCommand()
+	subCmd, _, err := cmd.Find([]string{"sub", "create"})
+	if err != nil {
+		t.Fatalf("sub create command not found: %v", err)
+	}
+
+	flag := subCmd.Flags().Lookup("label")
+	if flag == nil {
+		t.Fatal("Expected --label flag to exist")
+	}
+	if flag.Shorthand != "l" {
+		t.Errorf("Expected --label shorthand 'l', got '%s'", flag.Shorthand)
+	}
+}
+
+func TestSubCreateCommand_HasAssigneeFlag(t *testing.T) {
+	cmd := NewRootCommand()
+	subCmd, _, err := cmd.Find([]string{"sub", "create"})
+	if err != nil {
+		t.Fatalf("sub create command not found: %v", err)
+	}
+
+	flag := subCmd.Flags().Lookup("assignee")
+	if flag == nil {
+		t.Fatal("Expected --assignee flag to exist")
+	}
+	if flag.Shorthand != "a" {
+		t.Errorf("Expected --assignee shorthand 'a', got '%s'", flag.Shorthand)
+	}
+}
+
+func TestSubCreateCommand_HasMilestoneFlag(t *testing.T) {
+	cmd := NewRootCommand()
+	subCmd, _, err := cmd.Find([]string{"sub", "create"})
+	if err != nil {
+		t.Fatalf("sub create command not found: %v", err)
+	}
+
+	flag := subCmd.Flags().Lookup("milestone")
+	if flag == nil {
+		t.Fatal("Expected --milestone flag to exist")
+	}
+	if flag.Shorthand != "m" {
+		t.Errorf("Expected --milestone shorthand 'm', got '%s'", flag.Shorthand)
+	}
+}
+
+// ============================================================================
+// Sub List Command Enhancement Tests (#118-120, #124)
+// ============================================================================
+
+func TestSubListCommand_HasStateFlag(t *testing.T) {
+	cmd := NewRootCommand()
+	subCmd, _, err := cmd.Find([]string{"sub", "list"})
+	if err != nil {
+		t.Fatalf("sub list command not found: %v", err)
+	}
+
+	flag := subCmd.Flags().Lookup("state")
+	if flag == nil {
+		t.Fatal("Expected --state flag to exist")
+	}
+	if flag.Shorthand != "s" {
+		t.Errorf("Expected --state shorthand 's', got '%s'", flag.Shorthand)
+	}
+	if flag.DefValue != "all" {
+		t.Errorf("Expected --state default 'all', got '%s'", flag.DefValue)
+	}
+}
+
+func TestSubListCommand_HasLimitFlag(t *testing.T) {
+	cmd := NewRootCommand()
+	subCmd, _, err := cmd.Find([]string{"sub", "list"})
+	if err != nil {
+		t.Fatalf("sub list command not found: %v", err)
+	}
+
+	flag := subCmd.Flags().Lookup("limit")
+	if flag == nil {
+		t.Fatal("Expected --limit flag to exist")
+	}
+	if flag.Shorthand != "n" {
+		t.Errorf("Expected --limit shorthand 'n', got '%s'", flag.Shorthand)
+	}
+	if flag.DefValue != "0" {
+		t.Errorf("Expected --limit default '0', got '%s'", flag.DefValue)
+	}
+}
+
+func TestSubListCommand_HasWebFlag(t *testing.T) {
+	cmd := NewRootCommand()
+	subCmd, _, err := cmd.Find([]string{"sub", "list"})
+	if err != nil {
+		t.Fatalf("sub list command not found: %v", err)
+	}
+
+	flag := subCmd.Flags().Lookup("web")
+	if flag == nil {
+		t.Fatal("Expected --web flag to exist")
+	}
+	if flag.Shorthand != "w" {
+		t.Errorf("Expected --web shorthand 'w', got '%s'", flag.Shorthand)
+	}
+}
+
+func TestSubListCommand_HasRelationFlag(t *testing.T) {
+	cmd := NewRootCommand()
+	subCmd, _, err := cmd.Find([]string{"sub", "list"})
+	if err != nil {
+		t.Fatalf("sub list command not found: %v", err)
+	}
+
+	flag := subCmd.Flags().Lookup("relation")
+	if flag == nil {
+		t.Fatal("Expected --relation flag to exist")
+	}
+	if flag.DefValue != "children" {
+		t.Errorf("Expected --relation default 'children', got '%s'", flag.DefValue)
+	}
+}
+
+func TestSubListCommand_HelpDocumentsNewFlags(t *testing.T) {
+	cmd := NewRootCommand()
+	cmd.SetArgs([]string{"sub", "list", "--help"})
+
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("sub list help failed: %v", err)
+	}
+
+	output := buf.String()
+
+	// Check that new flags are documented
+	tests := []string{
+		"-s, --state",
+		"-n, --limit",
+		"-w, --web",
+		"--relation",
+		"open",
+		"closed",
+		"parent",
+		"siblings",
+	}
+
+	for _, expected := range tests {
+		if !strings.Contains(output, expected) {
+			t.Errorf("Expected help to contain '%s'", expected)
+		}
+	}
+}
+
+// ============================================================================
+// filterSubIssuesByState Tests
+// ============================================================================
+
+func TestFilterSubIssuesByState_All(t *testing.T) {
+	subIssues := []api.SubIssue{
+		{Number: 1, State: "OPEN"},
+		{Number: 2, State: "CLOSED"},
+		{Number: 3, State: "OPEN"},
+	}
+
+	filtered := filterSubIssuesByState(subIssues, "all")
+	if len(filtered) != 3 {
+		t.Errorf("Expected 3 results for 'all', got %d", len(filtered))
+	}
+}
+
+func TestFilterSubIssuesByState_Open(t *testing.T) {
+	subIssues := []api.SubIssue{
+		{Number: 1, State: "OPEN"},
+		{Number: 2, State: "CLOSED"},
+		{Number: 3, State: "OPEN"},
+	}
+
+	filtered := filterSubIssuesByState(subIssues, "open")
+	if len(filtered) != 2 {
+		t.Errorf("Expected 2 results for 'open', got %d", len(filtered))
+	}
+
+	for _, sub := range filtered {
+		if sub.State != "OPEN" {
+			t.Errorf("Expected all filtered issues to be OPEN, got %s", sub.State)
+		}
+	}
+}
+
+func TestFilterSubIssuesByState_Closed(t *testing.T) {
+	subIssues := []api.SubIssue{
+		{Number: 1, State: "OPEN"},
+		{Number: 2, State: "CLOSED"},
+		{Number: 3, State: "OPEN"},
+		{Number: 4, State: "CLOSED"},
+	}
+
+	filtered := filterSubIssuesByState(subIssues, "closed")
+	if len(filtered) != 2 {
+		t.Errorf("Expected 2 results for 'closed', got %d", len(filtered))
+	}
+
+	for _, sub := range filtered {
+		if sub.State != "CLOSED" {
+			t.Errorf("Expected all filtered issues to be CLOSED, got %s", sub.State)
+		}
+	}
+}
+
+func TestFilterSubIssuesByState_Empty(t *testing.T) {
+	subIssues := []api.SubIssue{}
+
+	filtered := filterSubIssuesByState(subIssues, "open")
+	if len(filtered) != 0 {
+		t.Errorf("Expected 0 results for empty input, got %d", len(filtered))
+	}
+}
+
+// ============================================================================
+// outputSubListJSONExtended Tests
+// ============================================================================
+
+func TestOutputSubListJSONExtended_ChildrenOnly(t *testing.T) {
+	result := SubListResult{
+		Issue: &api.Issue{
+			Number: 10,
+			Title:  "Test Issue",
+			State:  "OPEN",
+			URL:    "https://github.com/owner/repo/issues/10",
+		},
+		Children: []api.SubIssue{
+			{Number: 1, Title: "Child 1", State: "OPEN", Repository: api.Repository{Owner: "owner", Name: "repo"}},
+			{Number: 2, Title: "Child 2", State: "CLOSED", Repository: api.Repository{Owner: "owner", Name: "repo"}},
+		},
+	}
+
+	// Capture stdout
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := outputSubListJSONExtended(result, "children")
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	output, _ := io.ReadAll(r)
+
+	var jsonResult SubListJSONExtended
+	if err := json.Unmarshal(output, &jsonResult); err != nil {
+		t.Fatalf("Failed to parse JSON output: %v", err)
+	}
+
+	if jsonResult.Issue.Number != 10 {
+		t.Errorf("Expected issue number 10, got %d", jsonResult.Issue.Number)
+	}
+	if len(jsonResult.Children) != 2 {
+		t.Errorf("Expected 2 children, got %d", len(jsonResult.Children))
+	}
+	if jsonResult.Parent != nil {
+		t.Error("Expected no parent in output")
+	}
+	if jsonResult.Summary.Total != 2 {
+		t.Errorf("Expected total 2, got %d", jsonResult.Summary.Total)
+	}
+	if jsonResult.Summary.Open != 1 {
+		t.Errorf("Expected open 1, got %d", jsonResult.Summary.Open)
+	}
+	if jsonResult.Summary.Closed != 1 {
+		t.Errorf("Expected closed 1, got %d", jsonResult.Summary.Closed)
+	}
+}
+
+func TestOutputSubListJSONExtended_WithParent(t *testing.T) {
+	result := SubListResult{
+		Issue: &api.Issue{
+			Number: 10,
+			Title:  "Test Issue",
+			State:  "OPEN",
+			URL:    "https://github.com/owner/repo/issues/10",
+		},
+		Parent: &api.Issue{
+			Number: 5,
+			Title:  "Parent Issue",
+			State:  "OPEN",
+			URL:    "https://github.com/owner/repo/issues/5",
+		},
+	}
+
+	// Capture stdout
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := outputSubListJSONExtended(result, "parent")
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	output, _ := io.ReadAll(r)
+
+	var jsonResult SubListJSONExtended
+	if err := json.Unmarshal(output, &jsonResult); err != nil {
+		t.Fatalf("Failed to parse JSON output: %v", err)
+	}
+
+	if jsonResult.Parent == nil {
+		t.Fatal("Expected parent in output")
+	}
+	if jsonResult.Parent.Number != 5 {
+		t.Errorf("Expected parent number 5, got %d", jsonResult.Parent.Number)
+	}
+	if jsonResult.Parent.Title != "Parent Issue" {
+		t.Errorf("Expected parent title 'Parent Issue', got '%s'", jsonResult.Parent.Title)
+	}
+}
+
+func TestOutputSubListJSONExtended_WithSiblings(t *testing.T) {
+	result := SubListResult{
+		Issue: &api.Issue{
+			Number: 10,
+			Title:  "Test Issue",
+			State:  "OPEN",
+			URL:    "https://github.com/owner/repo/issues/10",
+		},
+		Parent: &api.Issue{
+			Number: 5,
+			Title:  "Parent Issue",
+			State:  "OPEN",
+			URL:    "https://github.com/owner/repo/issues/5",
+		},
+		Siblings: []api.SubIssue{
+			{Number: 11, Title: "Sibling 1", State: "OPEN", Repository: api.Repository{Owner: "owner", Name: "repo"}},
+			{Number: 12, Title: "Sibling 2", State: "OPEN", Repository: api.Repository{Owner: "owner", Name: "repo"}},
+		},
+	}
+
+	// Capture stdout
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := outputSubListJSONExtended(result, "siblings")
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	output, _ := io.ReadAll(r)
+
+	var jsonResult SubListJSONExtended
+	if err := json.Unmarshal(output, &jsonResult); err != nil {
+		t.Fatalf("Failed to parse JSON output: %v", err)
+	}
+
+	if len(jsonResult.Siblings) != 2 {
+		t.Errorf("Expected 2 siblings, got %d", len(jsonResult.Siblings))
+	}
+}
+
+// ============================================================================
+// outputSubListTableExtended Tests
+// ============================================================================
+
+func TestOutputSubListTableExtended_ChildrenOnly(t *testing.T) {
+	result := SubListResult{
+		Issue: &api.Issue{
+			Number: 10,
+			Title:  "Test Issue",
+			State:  "OPEN",
+			URL:    "https://github.com/owner/repo/issues/10",
+			Repository: api.Repository{
+				Owner: "owner",
+				Name:  "repo",
+			},
+		},
+		Children: []api.SubIssue{
+			{Number: 1, Title: "Child 1", State: "OPEN", Repository: api.Repository{Owner: "owner", Name: "repo"}},
+			{Number: 2, Title: "Child 2", State: "CLOSED", Repository: api.Repository{Owner: "owner", Name: "repo"}},
+		},
+	}
+
+	// Capture stdout
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := outputSubListTableExtended(result, "children")
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	output, _ := io.ReadAll(r)
+	outputStr := string(output)
+
+	// Should show issue info
+	if !strings.Contains(outputStr, "#10") {
+		t.Error("Expected issue number in output")
+	}
+
+	// Should show children section
+	if !strings.Contains(outputStr, "Children:") {
+		t.Error("Expected 'Children:' section in output")
+	}
+
+	// Should show progress
+	if !strings.Contains(outputStr, "1/2 complete") {
+		t.Error("Expected progress '1/2 complete' in output")
+	}
+
+	// Should NOT show parent or siblings sections
+	if strings.Contains(outputStr, "Parent:") {
+		t.Error("Unexpected 'Parent:' section in output")
+	}
+	if strings.Contains(outputStr, "Siblings:") {
+		t.Error("Unexpected 'Siblings:' section in output")
+	}
+}
+
+func TestOutputSubListTableExtended_ParentRelation(t *testing.T) {
+	result := SubListResult{
+		Issue: &api.Issue{
+			Number: 10,
+			Title:  "Test Issue",
+			State:  "OPEN",
+			URL:    "https://github.com/owner/repo/issues/10",
+		},
+		Parent: &api.Issue{
+			Number: 5,
+			Title:  "Parent Issue",
+			State:  "OPEN",
+			URL:    "https://github.com/owner/repo/issues/5",
+		},
+	}
+
+	// Capture stdout
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := outputSubListTableExtended(result, "parent")
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	output, _ := io.ReadAll(r)
+	outputStr := string(output)
+
+	// Should show parent section
+	if !strings.Contains(outputStr, "Parent:") {
+		t.Error("Expected 'Parent:' section in output")
+	}
+	if !strings.Contains(outputStr, "#5") {
+		t.Error("Expected parent number #5 in output")
+	}
+	if !strings.Contains(outputStr, "Parent Issue") {
+		t.Error("Expected parent title in output")
+	}
+}
+
+func TestOutputSubListTableExtended_AllRelations(t *testing.T) {
+	result := SubListResult{
+		Issue: &api.Issue{
+			Number:     10,
+			Title:      "Test Issue",
+			State:      "OPEN",
+			URL:        "https://github.com/owner/repo/issues/10",
+			Repository: api.Repository{Owner: "owner", Name: "repo"},
+		},
+		Parent: &api.Issue{
+			Number: 5,
+			Title:  "Parent Issue",
+			State:  "OPEN",
+			URL:    "https://github.com/owner/repo/issues/5",
+		},
+		Children: []api.SubIssue{
+			{Number: 20, Title: "Child 1", State: "OPEN", Repository: api.Repository{Owner: "owner", Name: "repo"}},
+		},
+		Siblings: []api.SubIssue{
+			{Number: 11, Title: "Sibling 1", State: "CLOSED", Repository: api.Repository{Owner: "owner", Name: "repo"}},
+		},
+	}
+
+	// Capture stdout
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := outputSubListTableExtended(result, "all")
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	output, _ := io.ReadAll(r)
+	outputStr := string(output)
+
+	// Should show all sections
+	if !strings.Contains(outputStr, "Parent:") {
+		t.Error("Expected 'Parent:' section in output")
+	}
+	if !strings.Contains(outputStr, "Children:") {
+		t.Error("Expected 'Children:' section in output")
+	}
+	if !strings.Contains(outputStr, "Siblings:") {
+		t.Error("Expected 'Siblings:' section in output")
+	}
+}
+
+func TestOutputSubListTableExtended_NoParent(t *testing.T) {
+	result := SubListResult{
+		Issue: &api.Issue{
+			Number: 10,
+			Title:  "Test Issue",
+			State:  "OPEN",
+			URL:    "https://github.com/owner/repo/issues/10",
+		},
+		Parent: nil, // No parent
+	}
+
+	// Capture stdout
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := outputSubListTableExtended(result, "siblings")
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	output, _ := io.ReadAll(r)
+	outputStr := string(output)
+
+	// Should indicate no parent
+	if !strings.Contains(outputStr, "No parent issue") {
+		t.Error("Expected 'No parent issue' message in output")
+	}
+}
+
+// ============================================================================
+// Sub Remove Command Enhancement Tests (#121-122)
+// ============================================================================
+
+func TestSubRemoveCommand_HasForceFlag(t *testing.T) {
+	cmd := NewRootCommand()
+	subCmd, _, err := cmd.Find([]string{"sub", "remove"})
+	if err != nil {
+		t.Fatalf("sub remove command not found: %v", err)
+	}
+
+	flag := subCmd.Flags().Lookup("force")
+	if flag == nil {
+		t.Fatal("Expected --force flag to exist")
+	}
+	if flag.Shorthand != "f" {
+		t.Errorf("Expected --force shorthand 'f', got '%s'", flag.Shorthand)
+	}
+	if flag.DefValue != "false" {
+		t.Errorf("Expected --force default 'false', got '%s'", flag.DefValue)
+	}
+}
+
+func TestSubRemoveCommand_AcceptsMultipleChildren(t *testing.T) {
+	cmd := NewRootCommand()
+	subCmd, _, err := cmd.Find([]string{"sub", "remove"})
+	if err != nil {
+		t.Fatalf("sub remove command not found: %v", err)
+	}
+
+	// Check that Args allows minimum of 2 arguments (parent + at least one child)
+	// The command should accept more than 2 args
+	argsFunc := subCmd.Args
+	if argsFunc == nil {
+		t.Fatal("Expected Args function to be set")
+	}
+
+	// Test that 2 args is valid
+	err = argsFunc(subCmd, []string{"10", "15"})
+	if err != nil {
+		t.Errorf("Expected 2 args to be valid, got error: %v", err)
+	}
+
+	// Test that 3 args is valid (parent + 2 children)
+	err = argsFunc(subCmd, []string{"10", "15", "16"})
+	if err != nil {
+		t.Errorf("Expected 3 args to be valid, got error: %v", err)
+	}
+
+	// Test that 5 args is valid (parent + 4 children)
+	err = argsFunc(subCmd, []string{"10", "15", "16", "17", "18"})
+	if err != nil {
+		t.Errorf("Expected 5 args to be valid, got error: %v", err)
+	}
+
+	// Test that 1 arg is invalid
+	err = argsFunc(subCmd, []string{"10"})
+	if err == nil {
+		t.Error("Expected 1 arg to be invalid")
+	}
+
+	// Test that 0 args is invalid
+	err = argsFunc(subCmd, []string{})
+	if err == nil {
+		t.Error("Expected 0 args to be invalid")
+	}
+}
+
+func TestSubRemoveCommand_HelpDocumentsBatchRemoval(t *testing.T) {
+	cmd := NewRootCommand()
+	cmd.SetArgs([]string{"sub", "remove", "--help"})
+
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("sub remove help failed: %v", err)
+	}
+
+	output := buf.String()
+
+	// Check that help mentions multiple children
+	if !strings.Contains(output, "child-issue>...") {
+		t.Error("Expected help to show <child-issue>... indicating multiple args")
+	}
+
+	// Check that help shows batch example
+	if !strings.Contains(output, "15 16 17") {
+		t.Error("Expected help to show batch removal example with multiple issues")
+	}
+
+	// Check that --force flag is documented
+	if !strings.Contains(output, "-f, --force") {
+		t.Error("Expected help to document --force flag")
+	}
+}
+
+func TestSubRemoveCommand_UsageDescription(t *testing.T) {
+	cmd := NewRootCommand()
+	subCmd, _, err := cmd.Find([]string{"sub", "remove"})
+	if err != nil {
+		t.Fatalf("sub remove command not found: %v", err)
+	}
+
+	// Check that the short description mentions links (plural)
+	if !strings.Contains(subCmd.Short, "links") {
+		t.Error("Expected short description to mention 'links' (plural)")
+	}
+
+	// Check that the long description mentions batch operation
+	if !strings.Contains(subCmd.Long, "Multiple") || !strings.Contains(subCmd.Long, "batch") {
+		t.Error("Expected long description to mention batch operation")
 	}
 }

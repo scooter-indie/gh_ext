@@ -35,6 +35,9 @@ func TestIntakeCommand(t *testing.T) {
 		if applyFlag == nil {
 			t.Error("expected --apply flag")
 		}
+		if applyFlag.Shorthand != "a" {
+			t.Errorf("expected --apply shorthand 'a', got %s", applyFlag.Shorthand)
+		}
 
 		// Check --dry-run flag
 		dryRunFlag := cmd.Flags().Lookup("dry-run")
@@ -46,6 +49,21 @@ func TestIntakeCommand(t *testing.T) {
 		jsonFlag := cmd.Flags().Lookup("json")
 		if jsonFlag == nil {
 			t.Error("expected --json flag")
+		}
+
+		// Check --label flag
+		labelFlag := cmd.Flags().Lookup("label")
+		if labelFlag == nil {
+			t.Error("expected --label flag")
+		}
+		if labelFlag.Shorthand != "l" {
+			t.Errorf("expected --label shorthand 'l', got %s", labelFlag.Shorthand)
+		}
+
+		// Check --assignee flag
+		assigneeFlag := cmd.Flags().Lookup("assignee")
+		if assigneeFlag == nil {
+			t.Error("expected --assignee flag")
 		}
 	})
 
@@ -65,14 +83,20 @@ func TestIntakeOptions(t *testing.T) {
 	t.Run("default options", func(t *testing.T) {
 		opts := &intakeOptions{}
 
-		if opts.apply {
-			t.Error("apply should be false by default")
+		if opts.apply != "" {
+			t.Error("apply should be empty string by default")
 		}
 		if opts.dryRun {
 			t.Error("dryRun should be false by default")
 		}
 		if opts.json {
 			t.Error("json should be false by default")
+		}
+		if len(opts.label) > 0 {
+			t.Error("label should be empty by default")
+		}
+		if len(opts.assignee) > 0 {
+			t.Error("assignee should be empty by default")
 		}
 	})
 }
@@ -266,6 +290,166 @@ func TestIntakeJSONOutput_Structure(t *testing.T) {
 			if _, exists := result[field]; !exists {
 				t.Errorf("Expected field %q to exist in JSON output", field)
 			}
+		}
+	})
+}
+
+func TestFilterIntakeByLabel(t *testing.T) {
+	issues := []api.Issue{
+		{
+			Number: 1,
+			Title:  "Bug issue",
+			Labels: []api.Label{{Name: "bug"}, {Name: "urgent"}},
+		},
+		{
+			Number: 2,
+			Title:  "Feature issue",
+			Labels: []api.Label{{Name: "feature"}},
+		},
+		{
+			Number: 3,
+			Title:  "No labels",
+			Labels: []api.Label{},
+		},
+	}
+
+	t.Run("filters by single label", func(t *testing.T) {
+		filtered := filterIntakeByLabel(issues, []string{"bug"})
+		if len(filtered) != 1 {
+			t.Errorf("Expected 1 issue, got %d", len(filtered))
+		}
+		if filtered[0].Number != 1 {
+			t.Errorf("Expected issue #1, got #%d", filtered[0].Number)
+		}
+	})
+
+	t.Run("filters by multiple labels (OR)", func(t *testing.T) {
+		filtered := filterIntakeByLabel(issues, []string{"bug", "feature"})
+		if len(filtered) != 2 {
+			t.Errorf("Expected 2 issues, got %d", len(filtered))
+		}
+	})
+
+	t.Run("case insensitive matching", func(t *testing.T) {
+		filtered := filterIntakeByLabel(issues, []string{"BUG"})
+		if len(filtered) != 1 {
+			t.Errorf("Expected 1 issue with case-insensitive match, got %d", len(filtered))
+		}
+	})
+
+	t.Run("returns empty for non-matching label", func(t *testing.T) {
+		filtered := filterIntakeByLabel(issues, []string{"nonexistent"})
+		if len(filtered) != 0 {
+			t.Errorf("Expected 0 issues, got %d", len(filtered))
+		}
+	})
+}
+
+func TestFilterIntakeByAssignee(t *testing.T) {
+	issues := []api.Issue{
+		{
+			Number:    1,
+			Title:     "Assigned to alice",
+			Assignees: []api.Actor{{Login: "alice"}},
+		},
+		{
+			Number:    2,
+			Title:     "Assigned to bob",
+			Assignees: []api.Actor{{Login: "bob"}},
+		},
+		{
+			Number:    3,
+			Title:     "Assigned to both",
+			Assignees: []api.Actor{{Login: "alice"}, {Login: "bob"}},
+		},
+		{
+			Number:    4,
+			Title:     "No assignees",
+			Assignees: []api.Actor{},
+		},
+	}
+
+	t.Run("filters by single assignee", func(t *testing.T) {
+		filtered := filterIntakeByAssignee(issues, []string{"alice"})
+		if len(filtered) != 2 {
+			t.Errorf("Expected 2 issues assigned to alice, got %d", len(filtered))
+		}
+	})
+
+	t.Run("filters by multiple assignees (OR)", func(t *testing.T) {
+		filtered := filterIntakeByAssignee(issues, []string{"alice", "bob"})
+		if len(filtered) != 3 {
+			t.Errorf("Expected 3 issues, got %d", len(filtered))
+		}
+	})
+
+	t.Run("case insensitive matching", func(t *testing.T) {
+		filtered := filterIntakeByAssignee(issues, []string{"ALICE"})
+		if len(filtered) != 2 {
+			t.Errorf("Expected 2 issues with case-insensitive match, got %d", len(filtered))
+		}
+	})
+
+	t.Run("returns empty for non-matching assignee", func(t *testing.T) {
+		filtered := filterIntakeByAssignee(issues, []string{"charlie"})
+		if len(filtered) != 0 {
+			t.Errorf("Expected 0 issues, got %d", len(filtered))
+		}
+	})
+}
+
+func TestParseApplyFields(t *testing.T) {
+	t.Run("parses single field", func(t *testing.T) {
+		result := parseApplyFields("status:backlog")
+		if len(result) != 1 {
+			t.Errorf("Expected 1 field, got %d", len(result))
+		}
+		if result["status"] != "backlog" {
+			t.Errorf("Expected status=backlog, got %s", result["status"])
+		}
+	})
+
+	t.Run("parses multiple fields", func(t *testing.T) {
+		result := parseApplyFields("status:backlog,priority:p1")
+		if len(result) != 2 {
+			t.Errorf("Expected 2 fields, got %d", len(result))
+		}
+		if result["status"] != "backlog" {
+			t.Errorf("Expected status=backlog, got %s", result["status"])
+		}
+		if result["priority"] != "p1" {
+			t.Errorf("Expected priority=p1, got %s", result["priority"])
+		}
+	})
+
+	t.Run("handles empty string", func(t *testing.T) {
+		result := parseApplyFields("")
+		if len(result) != 0 {
+			t.Errorf("Expected 0 fields, got %d", len(result))
+		}
+	})
+
+	t.Run("handles whitespace", func(t *testing.T) {
+		result := parseApplyFields(" status : backlog , priority : p1 ")
+		if result["status"] != "backlog" {
+			t.Errorf("Expected status=backlog, got %s", result["status"])
+		}
+		if result["priority"] != "p1" {
+			t.Errorf("Expected priority=p1, got %s", result["priority"])
+		}
+	})
+
+	t.Run("ignores invalid pairs", func(t *testing.T) {
+		result := parseApplyFields("status:backlog,invalid,priority:p1")
+		if len(result) != 2 {
+			t.Errorf("Expected 2 fields (ignoring invalid), got %d", len(result))
+		}
+	})
+
+	t.Run("handles trailing comma", func(t *testing.T) {
+		result := parseApplyFields("status:backlog,")
+		if len(result) != 1 {
+			t.Errorf("Expected 1 field, got %d", len(result))
 		}
 	})
 }

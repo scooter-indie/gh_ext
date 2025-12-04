@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/scooter-indie/gh-pmu/internal/api"
@@ -317,6 +318,39 @@ func TestMoveCommand_RecursiveHelpText(t *testing.T) {
 	}
 	if !bytes.Contains([]byte(output), []byte("sub-issues")) {
 		t.Error("Expected help to mention sub-issues")
+	}
+}
+
+func TestMoveCommand_HelpHasRecursiveExamples(t *testing.T) {
+	cmd := NewRootCommand()
+	cmd.SetArgs([]string{"move", "--help"})
+
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("move help failed: %v", err)
+	}
+
+	output := buf.String()
+
+	// Verify recursive examples are documented
+	tests := []struct {
+		name     string
+		expected string
+	}{
+		{"basic recursive example", "--status in_progress --recursive"},
+		{"dry-run example", "--recursive --dry-run"},
+		{"yes flag example", "--recursive --yes"},
+		{"depth flag example", "--recursive --depth"},
+	}
+
+	for _, tt := range tests {
+		if !strings.Contains(output, tt.expected) {
+			t.Errorf("Expected help to contain %s example: %s", tt.name, tt.expected)
+		}
 	}
 }
 

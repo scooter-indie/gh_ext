@@ -42,6 +42,92 @@ func TestListCommand_HasStatusFlag(t *testing.T) {
 	}
 }
 
+func TestListCommand_HasAssigneeFlag(t *testing.T) {
+	cmd := NewRootCommand()
+	listCmd, _, err := cmd.Find([]string{"list"})
+	if err != nil {
+		t.Fatalf("list command not found: %v", err)
+	}
+
+	flag := listCmd.Flags().Lookup("assignee")
+	if flag == nil {
+		t.Fatal("Expected --assignee flag to exist")
+	}
+	if flag.Shorthand != "a" {
+		t.Errorf("Expected shorthand 'a', got '%s'", flag.Shorthand)
+	}
+}
+
+func TestListCommand_HasLabelFlag(t *testing.T) {
+	cmd := NewRootCommand()
+	listCmd, _, err := cmd.Find([]string{"list"})
+	if err != nil {
+		t.Fatalf("list command not found: %v", err)
+	}
+
+	flag := listCmd.Flags().Lookup("label")
+	if flag == nil {
+		t.Fatal("Expected --label flag to exist")
+	}
+	if flag.Shorthand != "l" {
+		t.Errorf("Expected shorthand 'l', got '%s'", flag.Shorthand)
+	}
+}
+
+func TestListCommand_HasSearchFlag(t *testing.T) {
+	cmd := NewRootCommand()
+	listCmd, _, err := cmd.Find([]string{"list"})
+	if err != nil {
+		t.Fatalf("list command not found: %v", err)
+	}
+
+	flag := listCmd.Flags().Lookup("search")
+	if flag == nil {
+		t.Fatal("Expected --search flag to exist")
+	}
+	if flag.Shorthand != "q" {
+		t.Errorf("Expected shorthand 'q', got '%s'", flag.Shorthand)
+	}
+}
+
+func TestListCommand_HasLimitFlag(t *testing.T) {
+	cmd := NewRootCommand()
+	listCmd, _, err := cmd.Find([]string{"list"})
+	if err != nil {
+		t.Fatalf("list command not found: %v", err)
+	}
+
+	flag := listCmd.Flags().Lookup("limit")
+	if flag == nil {
+		t.Fatal("Expected --limit flag to exist")
+	}
+	if flag.Shorthand != "n" {
+		t.Errorf("Expected shorthand 'n', got '%s'", flag.Shorthand)
+	}
+	if flag.Value.Type() != "int" {
+		t.Errorf("Expected --limit to be int, got %s", flag.Value.Type())
+	}
+}
+
+func TestListCommand_HasWebFlag(t *testing.T) {
+	cmd := NewRootCommand()
+	listCmd, _, err := cmd.Find([]string{"list"})
+	if err != nil {
+		t.Fatalf("list command not found: %v", err)
+	}
+
+	flag := listCmd.Flags().Lookup("web")
+	if flag == nil {
+		t.Fatal("Expected --web flag to exist")
+	}
+	if flag.Shorthand != "w" {
+		t.Errorf("Expected shorthand 'w', got '%s'", flag.Shorthand)
+	}
+	if flag.Value.Type() != "bool" {
+		t.Errorf("Expected --web to be bool, got %s", flag.Value.Type())
+	}
+}
+
 func TestListCommand_HasPriorityFlag(t *testing.T) {
 	cmd := NewRootCommand()
 	listCmd, _, err := cmd.Find([]string{"list"})
@@ -561,5 +647,335 @@ func TestJSONItem_AllFields(t *testing.T) {
 		if !strings.Contains(jsonStr, field) {
 			t.Errorf("Expected JSON to contain field %q", field)
 		}
+	}
+}
+
+// ============================================================================
+// filterByAssignee Tests
+// ============================================================================
+
+func TestFilterByAssignee(t *testing.T) {
+	tests := []struct {
+		name      string
+		items     []api.ProjectItem
+		assignee  string
+		wantCount int
+	}{
+		{
+			name: "exact match",
+			items: []api.ProjectItem{
+				{
+					ID: "1",
+					Issue: &api.Issue{
+						Number:    1,
+						Title:     "Test 1",
+						Assignees: []api.Actor{{Login: "user1"}},
+					},
+				},
+				{
+					ID: "2",
+					Issue: &api.Issue{
+						Number:    2,
+						Title:     "Test 2",
+						Assignees: []api.Actor{{Login: "user2"}},
+					},
+				},
+			},
+			assignee:  "user1",
+			wantCount: 1,
+		},
+		{
+			name: "case-insensitive",
+			items: []api.ProjectItem{
+				{
+					ID: "1",
+					Issue: &api.Issue{
+						Number:    1,
+						Title:     "Test 1",
+						Assignees: []api.Actor{{Login: "User1"}},
+					},
+				},
+			},
+			assignee:  "user1",
+			wantCount: 1,
+		},
+		{
+			name: "multiple assignees on issue",
+			items: []api.ProjectItem{
+				{
+					ID: "1",
+					Issue: &api.Issue{
+						Number:    1,
+						Title:     "Test 1",
+						Assignees: []api.Actor{{Login: "user1"}, {Login: "user2"}},
+					},
+				},
+			},
+			assignee:  "user2",
+			wantCount: 1,
+		},
+		{
+			name: "no match",
+			items: []api.ProjectItem{
+				{
+					ID: "1",
+					Issue: &api.Issue{
+						Number:    1,
+						Title:     "Test 1",
+						Assignees: []api.Actor{{Login: "user1"}},
+					},
+				},
+			},
+			assignee:  "user3",
+			wantCount: 0,
+		},
+		{
+			name: "nil issue",
+			items: []api.ProjectItem{
+				{ID: "1", Issue: nil},
+			},
+			assignee:  "user1",
+			wantCount: 0,
+		},
+		{
+			name:      "empty items",
+			items:     []api.ProjectItem{},
+			assignee:  "user1",
+			wantCount: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := filterByAssignee(tt.items, tt.assignee)
+			if len(result) != tt.wantCount {
+				t.Errorf("filterByAssignee() returned %d items, want %d", len(result), tt.wantCount)
+			}
+		})
+	}
+}
+
+// ============================================================================
+// filterByLabel Tests
+// ============================================================================
+
+func TestFilterByLabel(t *testing.T) {
+	tests := []struct {
+		name      string
+		items     []api.ProjectItem
+		label     string
+		wantCount int
+	}{
+		{
+			name: "exact match",
+			items: []api.ProjectItem{
+				{
+					ID: "1",
+					Issue: &api.Issue{
+						Number: 1,
+						Title:  "Test 1",
+						Labels: []api.Label{{Name: "bug"}},
+					},
+				},
+				{
+					ID: "2",
+					Issue: &api.Issue{
+						Number: 2,
+						Title:  "Test 2",
+						Labels: []api.Label{{Name: "enhancement"}},
+					},
+				},
+			},
+			label:     "bug",
+			wantCount: 1,
+		},
+		{
+			name: "case-insensitive",
+			items: []api.ProjectItem{
+				{
+					ID: "1",
+					Issue: &api.Issue{
+						Number: 1,
+						Title:  "Test 1",
+						Labels: []api.Label{{Name: "Bug"}},
+					},
+				},
+			},
+			label:     "bug",
+			wantCount: 1,
+		},
+		{
+			name: "multiple labels on issue",
+			items: []api.ProjectItem{
+				{
+					ID: "1",
+					Issue: &api.Issue{
+						Number: 1,
+						Title:  "Test 1",
+						Labels: []api.Label{{Name: "bug"}, {Name: "priority-high"}},
+					},
+				},
+			},
+			label:     "priority-high",
+			wantCount: 1,
+		},
+		{
+			name: "no match",
+			items: []api.ProjectItem{
+				{
+					ID: "1",
+					Issue: &api.Issue{
+						Number: 1,
+						Title:  "Test 1",
+						Labels: []api.Label{{Name: "bug"}},
+					},
+				},
+			},
+			label:     "enhancement",
+			wantCount: 0,
+		},
+		{
+			name: "nil issue",
+			items: []api.ProjectItem{
+				{ID: "1", Issue: nil},
+			},
+			label:     "bug",
+			wantCount: 0,
+		},
+		{
+			name:      "empty items",
+			items:     []api.ProjectItem{},
+			label:     "bug",
+			wantCount: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := filterByLabel(tt.items, tt.label)
+			if len(result) != tt.wantCount {
+				t.Errorf("filterByLabel() returned %d items, want %d", len(result), tt.wantCount)
+			}
+		})
+	}
+}
+
+// ============================================================================
+// filterBySearch Tests
+// ============================================================================
+
+func TestFilterBySearch(t *testing.T) {
+	tests := []struct {
+		name      string
+		items     []api.ProjectItem
+		search    string
+		wantCount int
+	}{
+		{
+			name: "match in title",
+			items: []api.ProjectItem{
+				{
+					ID: "1",
+					Issue: &api.Issue{
+						Number: 1,
+						Title:  "Fix login bug",
+						Body:   "Some body text",
+					},
+				},
+				{
+					ID: "2",
+					Issue: &api.Issue{
+						Number: 2,
+						Title:  "Add feature",
+						Body:   "Feature description",
+					},
+				},
+			},
+			search:    "login",
+			wantCount: 1,
+		},
+		{
+			name: "match in body",
+			items: []api.ProjectItem{
+				{
+					ID: "1",
+					Issue: &api.Issue{
+						Number: 1,
+						Title:  "Some title",
+						Body:   "Fix the authentication flow",
+					},
+				},
+			},
+			search:    "authentication",
+			wantCount: 1,
+		},
+		{
+			name: "case-insensitive",
+			items: []api.ProjectItem{
+				{
+					ID: "1",
+					Issue: &api.Issue{
+						Number: 1,
+						Title:  "Fix LOGIN Bug",
+						Body:   "",
+					},
+				},
+			},
+			search:    "login",
+			wantCount: 1,
+		},
+		{
+			name: "partial match",
+			items: []api.ProjectItem{
+				{
+					ID: "1",
+					Issue: &api.Issue{
+						Number: 1,
+						Title:  "Authentication error",
+						Body:   "",
+					},
+				},
+			},
+			search:    "auth",
+			wantCount: 1,
+		},
+		{
+			name: "no match",
+			items: []api.ProjectItem{
+				{
+					ID: "1",
+					Issue: &api.Issue{
+						Number: 1,
+						Title:  "Fix bug",
+						Body:   "Bug description",
+					},
+				},
+			},
+			search:    "feature",
+			wantCount: 0,
+		},
+		{
+			name: "nil issue",
+			items: []api.ProjectItem{
+				{ID: "1", Issue: nil},
+			},
+			search:    "test",
+			wantCount: 0,
+		},
+		{
+			name:      "empty items",
+			items:     []api.ProjectItem{},
+			search:    "test",
+			wantCount: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := filterBySearch(tt.items, tt.search)
+			if len(result) != tt.wantCount {
+				t.Errorf("filterBySearch() returned %d items, want %d", len(result), tt.wantCount)
+			}
+		})
 	}
 }

@@ -101,6 +101,24 @@ func TestTriageCommand(t *testing.T) {
 		if repoFlag.Shorthand != "R" {
 			t.Errorf("expected --repo shorthand to be 'R', got %q", repoFlag.Shorthand)
 		}
+
+		// Check --query flag
+		queryFlag := cmd.Flags().Lookup("query")
+		if queryFlag == nil {
+			t.Fatal("expected --query flag")
+		}
+		if queryFlag.Shorthand != "q" {
+			t.Errorf("expected --query shorthand to be 'q', got %q", queryFlag.Shorthand)
+		}
+
+		// Check --apply flag
+		applyFlag := cmd.Flags().Lookup("apply")
+		if applyFlag == nil {
+			t.Fatal("expected --apply flag")
+		}
+		if applyFlag.Shorthand != "a" {
+			t.Errorf("expected --apply shorthand to be 'a', got %q", applyFlag.Shorthand)
+		}
 	})
 
 	t.Run("command is registered in root", func(t *testing.T) {
@@ -133,6 +151,61 @@ func TestTriageOptions(t *testing.T) {
 		}
 		if opts.repo != "" {
 			t.Errorf("repo should be empty by default, got %q", opts.repo)
+		}
+		if opts.query != "" {
+			t.Errorf("query should be empty by default, got %q", opts.query)
+		}
+		if opts.apply != "" {
+			t.Errorf("apply should be empty by default, got %q", opts.apply)
+		}
+	})
+}
+
+func TestParseTriageApplyFields(t *testing.T) {
+	t.Run("parses single field", func(t *testing.T) {
+		result := parseTriageApplyFields("status:backlog")
+		if len(result) != 1 {
+			t.Errorf("Expected 1 field, got %d", len(result))
+		}
+		if result["status"] != "backlog" {
+			t.Errorf("Expected status=backlog, got %s", result["status"])
+		}
+	})
+
+	t.Run("parses multiple fields", func(t *testing.T) {
+		result := parseTriageApplyFields("status:backlog,priority:p1")
+		if len(result) != 2 {
+			t.Errorf("Expected 2 fields, got %d", len(result))
+		}
+		if result["status"] != "backlog" {
+			t.Errorf("Expected status=backlog, got %s", result["status"])
+		}
+		if result["priority"] != "p1" {
+			t.Errorf("Expected priority=p1, got %s", result["priority"])
+		}
+	})
+
+	t.Run("handles empty string", func(t *testing.T) {
+		result := parseTriageApplyFields("")
+		if len(result) != 0 {
+			t.Errorf("Expected 0 fields, got %d", len(result))
+		}
+	})
+
+	t.Run("handles whitespace", func(t *testing.T) {
+		result := parseTriageApplyFields(" status : backlog , priority : p1 ")
+		if result["status"] != "backlog" {
+			t.Errorf("Expected status=backlog, got %s", result["status"])
+		}
+		if result["priority"] != "p1" {
+			t.Errorf("Expected priority=p1, got %s", result["priority"])
+		}
+	})
+
+	t.Run("ignores invalid pairs", func(t *testing.T) {
+		result := parseTriageApplyFields("status:backlog,invalid,priority:p1")
+		if len(result) != 2 {
+			t.Errorf("Expected 2 fields (ignoring invalid), got %d", len(result))
 		}
 	})
 }

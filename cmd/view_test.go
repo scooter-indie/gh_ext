@@ -55,6 +55,42 @@ func TestViewCommand_HasJSONFlag(t *testing.T) {
 	}
 }
 
+func TestViewCommand_HasWebFlag(t *testing.T) {
+	cmd := NewRootCommand()
+	viewCmd, _, err := cmd.Find([]string{"view"})
+	if err != nil {
+		t.Fatalf("view command not found: %v", err)
+	}
+
+	flag := viewCmd.Flags().Lookup("web")
+	if flag == nil {
+		t.Fatal("Expected --web flag to exist")
+	}
+
+	// Check shorthand
+	if flag.Shorthand != "w" {
+		t.Errorf("Expected --web shorthand to be 'w', got %s", flag.Shorthand)
+	}
+}
+
+func TestViewCommand_HasCommentsFlag(t *testing.T) {
+	cmd := NewRootCommand()
+	viewCmd, _, err := cmd.Find([]string{"view"})
+	if err != nil {
+		t.Fatalf("view command not found: %v", err)
+	}
+
+	flag := viewCmd.Flags().Lookup("comments")
+	if flag == nil {
+		t.Fatal("Expected --comments flag to exist")
+	}
+
+	// Check shorthand
+	if flag.Shorthand != "c" {
+		t.Errorf("Expected --comments shorthand to be 'c', got %s", flag.Shorthand)
+	}
+}
+
 func TestViewCommand_AcceptsIssueNumber(t *testing.T) {
 	cmd := NewRootCommand()
 	viewCmd, _, err := cmd.Find([]string{"view"})
@@ -104,6 +140,12 @@ func TestViewCommand_ParsesIssueReference(t *testing.T) {
 		{"with hash", "#123", "", "", 123, false},
 		{"full reference", "owner/repo#123", "owner", "repo", 123, false},
 		{"invalid", "invalid", "", "", 0, true},
+		// URL formats
+		{"https URL", "https://github.com/owner/repo/issues/123", "owner", "repo", 123, false},
+		{"http URL", "http://github.com/owner/repo/issues/123", "owner", "repo", 123, false},
+		{"URL with anchor", "https://github.com/owner/repo/issues/123#issuecomment-456", "owner", "repo", 123, false},
+		{"invalid URL - not issues", "https://github.com/owner/repo/pulls/123", "", "", 0, true},
+		{"invalid URL - too short", "https://github.com/owner", "", "", 0, true},
 	}
 
 	for _, tt := range tests {
@@ -190,7 +232,7 @@ func TestOutputViewTable_BasicIssue(t *testing.T) {
 		Author: api.Actor{Login: "testuser"},
 	}
 
-	err := outputViewTable(cmd, issue, nil, nil, nil)
+	err := outputViewTable(cmd, issue, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("outputViewTable() error = %v", err)
 	}
@@ -215,7 +257,7 @@ func TestOutputViewTable_WithAssignees(t *testing.T) {
 		},
 	}
 
-	err := outputViewTable(cmd, issue, nil, nil, nil)
+	err := outputViewTable(cmd, issue, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("outputViewTable() error = %v", err)
 	}
@@ -237,7 +279,7 @@ func TestOutputViewTable_WithLabels(t *testing.T) {
 		},
 	}
 
-	err := outputViewTable(cmd, issue, nil, nil, nil)
+	err := outputViewTable(cmd, issue, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("outputViewTable() error = %v", err)
 	}
@@ -256,7 +298,7 @@ func TestOutputViewTable_WithMilestone(t *testing.T) {
 		Milestone: &api.Milestone{Title: "v1.0.0"},
 	}
 
-	err := outputViewTable(cmd, issue, nil, nil, nil)
+	err := outputViewTable(cmd, issue, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("outputViewTable() error = %v", err)
 	}
@@ -279,7 +321,7 @@ func TestOutputViewTable_WithFieldValues(t *testing.T) {
 		{Field: "Priority", Value: "High"},
 	}
 
-	err := outputViewTable(cmd, issue, fieldValues, nil, nil)
+	err := outputViewTable(cmd, issue, fieldValues, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("outputViewTable() error = %v", err)
 	}
@@ -303,7 +345,7 @@ func TestOutputViewTable_WithParentIssue(t *testing.T) {
 		URL:    "https://github.com/owner/repo/issues/10",
 	}
 
-	err := outputViewTable(cmd, issue, nil, nil, parentIssue)
+	err := outputViewTable(cmd, issue, nil, nil, parentIssue, nil)
 	if err != nil {
 		t.Fatalf("outputViewTable() error = %v", err)
 	}
@@ -331,7 +373,7 @@ func TestOutputViewTable_WithSubIssues(t *testing.T) {
 		{Number: 45, Title: "Sub 3", State: "CLOSED", URL: "https://github.com/owner/repo/issues/45"},
 	}
 
-	err := outputViewTable(cmd, issue, nil, subIssues, nil)
+	err := outputViewTable(cmd, issue, nil, subIssues, nil, nil)
 	if err != nil {
 		t.Fatalf("outputViewTable() error = %v", err)
 	}
@@ -376,7 +418,7 @@ func TestOutputViewTable_WithCrossRepoSubIssues(t *testing.T) {
 		},
 	}
 
-	err := outputViewTable(cmd, issue, nil, subIssues, nil)
+	err := outputViewTable(cmd, issue, nil, subIssues, nil, nil)
 	if err != nil {
 		t.Fatalf("outputViewTable() error = %v", err)
 	}
@@ -395,7 +437,7 @@ func TestOutputViewTable_WithBody(t *testing.T) {
 		Body:   "This is the issue body with some content.\n\nMultiple paragraphs.",
 	}
 
-	err := outputViewTable(cmd, issue, nil, nil, nil)
+	err := outputViewTable(cmd, issue, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("outputViewTable() error = %v", err)
 	}
@@ -437,7 +479,7 @@ func TestOutputViewTable_FullIssue(t *testing.T) {
 		URL:    "https://github.com/owner/repo/issues/10",
 	}
 
-	err := outputViewTable(cmd, issue, fieldValues, subIssues, parentIssue)
+	err := outputViewTable(cmd, issue, fieldValues, subIssues, parentIssue, nil)
 	if err != nil {
 		t.Fatalf("outputViewTable() error = %v", err)
 	}
@@ -459,7 +501,7 @@ func TestOutputViewJSON_BasicIssue(t *testing.T) {
 		Author: api.Actor{Login: "testuser"},
 	}
 
-	err := outputViewJSON(cmd, issue, nil, nil, nil)
+	err := outputViewJSON(cmd, issue, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("outputViewJSON() error = %v", err)
 	}
@@ -486,7 +528,7 @@ func TestOutputViewJSON_WithAllFields(t *testing.T) {
 		{Field: "Priority", Value: "High"},
 	}
 
-	err := outputViewJSON(cmd, issue, fieldValues, nil, nil)
+	err := outputViewJSON(cmd, issue, fieldValues, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("outputViewJSON() error = %v", err)
 	}
@@ -510,7 +552,7 @@ func TestOutputViewJSON_WithSubIssues(t *testing.T) {
 		{Number: 45, Title: "Sub 3", State: "CLOSED", URL: "https://github.com/owner/repo/issues/45"},
 	}
 
-	err := outputViewJSON(cmd, issue, nil, subIssues, nil)
+	err := outputViewJSON(cmd, issue, nil, subIssues, nil, nil)
 	if err != nil {
 		t.Fatalf("outputViewJSON() error = %v", err)
 	}
@@ -534,7 +576,7 @@ func TestOutputViewJSON_WithParentIssue(t *testing.T) {
 		URL:    "https://github.com/owner/repo/issues/10",
 	}
 
-	err := outputViewJSON(cmd, issue, nil, nil, parentIssue)
+	err := outputViewJSON(cmd, issue, nil, nil, parentIssue, nil)
 	if err != nil {
 		t.Fatalf("outputViewJSON() error = %v", err)
 	}
@@ -561,7 +603,59 @@ func TestOutputViewJSON_SubIssueProgress(t *testing.T) {
 		{Number: 5, Title: "Task 5", State: "OPEN"},
 	}
 
-	err := outputViewJSON(cmd, issue, nil, subIssues, nil)
+	err := outputViewJSON(cmd, issue, nil, subIssues, nil, nil)
+	if err != nil {
+		t.Fatalf("outputViewJSON() error = %v", err)
+	}
+}
+
+func TestOpenViewInBrowser(t *testing.T) {
+	// Test that function exists and handles URL parameter
+	// We can't actually test browser opening in unit tests
+	_ = openViewInBrowser
+}
+
+func TestOutputViewTable_WithComments(t *testing.T) {
+	buf := new(bytes.Buffer)
+	cmd := createViewTestCmd(buf)
+
+	issue := &api.Issue{
+		Number: 42,
+		Title:  "Test Issue",
+		State:  "OPEN",
+		URL:    "https://github.com/owner/repo/issues/42",
+		Author: api.Actor{Login: "author"},
+	}
+
+	comments := []api.Comment{
+		{Author: "user1", Body: "First comment", CreatedAt: "2024-01-01T10:00:00Z"},
+		{Author: "user2", Body: "Second comment", CreatedAt: "2024-01-02T11:00:00Z"},
+	}
+
+	err := outputViewTable(cmd, issue, nil, nil, nil, comments)
+	if err != nil {
+		t.Fatalf("outputViewTable() error = %v", err)
+	}
+}
+
+func TestOutputViewJSON_WithComments(t *testing.T) {
+	buf := new(bytes.Buffer)
+	cmd := createViewTestCmd(buf)
+
+	issue := &api.Issue{
+		Number: 42,
+		Title:  "Test Issue",
+		State:  "OPEN",
+		URL:    "https://github.com/owner/repo/issues/42",
+		Author: api.Actor{Login: "author"},
+	}
+
+	comments := []api.Comment{
+		{Author: "user1", Body: "First comment", CreatedAt: "2024-01-01T10:00:00Z"},
+		{Author: "user2", Body: "Second comment", CreatedAt: "2024-01-02T11:00:00Z"},
+	}
+
+	err := outputViewJSON(cmd, issue, nil, nil, nil, comments)
 	if err != nil {
 		t.Fatalf("outputViewJSON() error = %v", err)
 	}

@@ -92,6 +92,92 @@ func TestCreateCommand_HasLabelFlag(t *testing.T) {
 	}
 }
 
+func TestCreateCommand_HasAssigneeFlag(t *testing.T) {
+	cmd := NewRootCommand()
+	createCmd, _, err := cmd.Find([]string{"create"})
+	if err != nil {
+		t.Fatalf("create command not found: %v", err)
+	}
+
+	flag := createCmd.Flags().Lookup("assignee")
+	if flag == nil {
+		t.Fatal("Expected --assignee flag to exist")
+	}
+	if flag.Shorthand != "a" {
+		t.Errorf("Expected shorthand 'a', got '%s'", flag.Shorthand)
+	}
+	if flag.Value.Type() != "stringArray" {
+		t.Errorf("Expected --assignee to be stringArray, got %s", flag.Value.Type())
+	}
+}
+
+func TestCreateCommand_HasMilestoneFlag(t *testing.T) {
+	cmd := NewRootCommand()
+	createCmd, _, err := cmd.Find([]string{"create"})
+	if err != nil {
+		t.Fatalf("create command not found: %v", err)
+	}
+
+	flag := createCmd.Flags().Lookup("milestone")
+	if flag == nil {
+		t.Fatal("Expected --milestone flag to exist")
+	}
+	if flag.Shorthand != "m" {
+		t.Errorf("Expected shorthand 'm', got '%s'", flag.Shorthand)
+	}
+}
+
+func TestCreateCommand_HasRepoFlag(t *testing.T) {
+	cmd := NewRootCommand()
+	createCmd, _, err := cmd.Find([]string{"create"})
+	if err != nil {
+		t.Fatalf("create command not found: %v", err)
+	}
+
+	flag := createCmd.Flags().Lookup("repo")
+	if flag == nil {
+		t.Fatal("Expected --repo flag to exist")
+	}
+	if flag.Shorthand != "R" {
+		t.Errorf("Expected shorthand 'R', got '%s'", flag.Shorthand)
+	}
+}
+
+func TestCreateCommand_HasFromFileFlag(t *testing.T) {
+	cmd := NewRootCommand()
+	createCmd, _, err := cmd.Find([]string{"create"})
+	if err != nil {
+		t.Fatalf("create command not found: %v", err)
+	}
+
+	flag := createCmd.Flags().Lookup("from-file")
+	if flag == nil {
+		t.Fatal("Expected --from-file flag to exist")
+	}
+	if flag.Shorthand != "f" {
+		t.Errorf("Expected shorthand 'f', got '%s'", flag.Shorthand)
+	}
+}
+
+func TestCreateCommand_HasInteractiveFlag(t *testing.T) {
+	cmd := NewRootCommand()
+	createCmd, _, err := cmd.Find([]string{"create"})
+	if err != nil {
+		t.Fatalf("create command not found: %v", err)
+	}
+
+	flag := createCmd.Flags().Lookup("interactive")
+	if flag == nil {
+		t.Fatal("Expected --interactive flag to exist")
+	}
+	if flag.Shorthand != "i" {
+		t.Errorf("Expected shorthand 'i', got '%s'", flag.Shorthand)
+	}
+	if flag.Value.Type() != "bool" {
+		t.Errorf("Expected --interactive to be bool, got %s", flag.Value.Type())
+	}
+}
+
 func TestCreateCommand_RequiresTitleInNonInteractiveMode(t *testing.T) {
 	cmd := NewRootCommand()
 	cmd.SetArgs([]string{"create", "--body", "test body"})

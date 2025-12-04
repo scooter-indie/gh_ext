@@ -13,9 +13,11 @@ import (
 )
 
 type intakeOptions struct {
-	apply  bool
-	dryRun bool
-	json   bool
+	apply    string
+	dryRun   bool
+	json     bool
+	label    []string
+	assignee []string
 }
 
 func newIntakeCommand() *cobra.Command {
@@ -32,11 +34,20 @@ Use --apply to automatically add discovered issues to the project.`,
 		Example: `  # List untracked issues
   gh pmu intake
 
+  # Filter by label
+  gh pmu intake --label bug --label urgent
+
+  # Filter by assignee
+  gh pmu intake --assignee username
+
   # Preview what would be added
   gh pmu intake --dry-run
 
-  # Add untracked issues to project
+  # Add untracked issues to project (with defaults from config)
   gh pmu intake --apply
+
+  # Add issues and set specific fields
+  gh pmu intake --apply status:backlog,priority:p1
 
   # Output as JSON
   gh pmu intake --json`,
@@ -45,9 +56,11 @@ Use --apply to automatically add discovered issues to the project.`,
 		},
 	}
 
-	cmd.Flags().BoolVarP(&opts.apply, "apply", "a", false, "Add untracked issues to the project with default fields")
+	cmd.Flags().StringVarP(&opts.apply, "apply", "a", "", "Add untracked issues to project (optionally set fields: status:backlog,priority:p1)")
 	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Show what would be added without making changes")
 	cmd.Flags().BoolVar(&opts.json, "json", false, "Output in JSON format")
+	cmd.Flags().StringArrayVarP(&opts.label, "label", "l", nil, "Filter issues by label (can be specified multiple times)")
+	cmd.Flags().StringArrayVar(&opts.assignee, "assignee", nil, "Filter issues by assignee (can be specified multiple times)")
 
 	return cmd
 }
@@ -121,6 +134,16 @@ func runIntake(cmd *cobra.Command, opts *intakeOptions) error {
 		}
 	}
 
+	// Apply label filter if specified
+	if len(opts.label) > 0 {
+		untrackedIssues = filterIntakeByLabel(untrackedIssues, opts.label)
+	}
+
+	// Apply assignee filter if specified
+	if len(opts.assignee) > 0 {
+		untrackedIssues = filterIntakeByAssignee(untrackedIssues, opts.assignee)
+	}
+
 	// Handle output
 	if len(untrackedIssues) == 0 {
 		if !opts.json {
@@ -143,7 +166,12 @@ func runIntake(cmd *cobra.Command, opts *intakeOptions) error {
 	}
 
 	// Apply - add issues to project
-	if opts.apply {
+	// Check if apply was specified (could be empty string "" for just --apply, or have key:value pairs)
+	applyFlagSet := cmd.Flags().Changed("apply")
+	if applyFlagSet {
+		// Parse key:value pairs from apply string
+		applyFields := parseApplyFields(opts.apply)
+
 		var added []api.Issue
 		var failed []api.Issue
 
@@ -155,14 +183,43 @@ func runIntake(cmd *cobra.Command, opts *intakeOptions) error {
 				continue
 			}
 
-			// Apply default fields from config
-			if cfg.Defaults.Status != "" {
+			// Apply fields from --apply argument first, then fall back to config defaults
+			statusSet := false
+			prioritySet := false
+
+			// Apply fields from --apply key:value pairs
+			for field, value := range applyFields {
+				fieldLower := strings.ToLower(field)
+				if fieldLower == "status" {
+					statusValue := cfg.ResolveFieldValue("status", value)
+					if err := client.SetProjectItemField(project.ID, itemID, "Status", statusValue); err != nil {
+						cmd.PrintErrf("Warning: failed to set status on #%d: %v\n", issue.Number, err)
+					} else {
+						statusSet = true
+					}
+				} else if fieldLower == "priority" {
+					priorityValue := cfg.ResolveFieldValue("priority", value)
+					if err := client.SetProjectItemField(project.ID, itemID, "Priority", priorityValue); err != nil {
+						cmd.PrintErrf("Warning: failed to set priority on #%d: %v\n", issue.Number, err)
+					} else {
+						prioritySet = true
+					}
+				} else {
+					// Generic field
+					if err := client.SetProjectItemField(project.ID, itemID, field, value); err != nil {
+						cmd.PrintErrf("Warning: failed to set %s on #%d: %v\n", field, issue.Number, err)
+					}
+				}
+			}
+
+			// Fall back to config defaults if not set via --apply
+			if !statusSet && cfg.Defaults.Status != "" {
 				statusValue := cfg.ResolveFieldValue("status", cfg.Defaults.Status)
 				if err := client.SetProjectItemField(project.ID, itemID, "Status", statusValue); err != nil {
 					cmd.PrintErrf("Warning: failed to set status on #%d: %v\n", issue.Number, err)
 				}
 			}
-			if cfg.Defaults.Priority != "" {
+			if !prioritySet && cfg.Defaults.Priority != "" {
 				priorityValue := cfg.ResolveFieldValue("priority", cfg.Defaults.Priority)
 				if err := client.SetProjectItemField(project.ID, itemID, "Priority", priorityValue); err != nil {
 					cmd.PrintErrf("Warning: failed to set priority on #%d: %v\n", issue.Number, err)
@@ -247,4 +304,64 @@ func outputIntakeJSON(cmd *cobra.Command, issues []api.Issue, status string) err
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(output)
+}
+
+// filterIntakeByLabel filters issues to only those with at least one of the specified labels
+func filterIntakeByLabel(issues []api.Issue, labels []string) []api.Issue {
+	var filtered []api.Issue
+	for _, issue := range issues {
+		for _, filterLabel := range labels {
+			for _, issueLabel := range issue.Labels {
+				if strings.EqualFold(issueLabel.Name, filterLabel) {
+					filtered = append(filtered, issue)
+					goto nextIssue
+				}
+			}
+		}
+	nextIssue:
+	}
+	return filtered
+}
+
+// filterIntakeByAssignee filters issues to only those with at least one of the specified assignees
+func filterIntakeByAssignee(issues []api.Issue, assignees []string) []api.Issue {
+	var filtered []api.Issue
+	for _, issue := range issues {
+		for _, filterAssignee := range assignees {
+			for _, issueAssignee := range issue.Assignees {
+				if strings.EqualFold(issueAssignee.Login, filterAssignee) {
+					filtered = append(filtered, issue)
+					goto nextIssue
+				}
+			}
+		}
+	nextIssue:
+	}
+	return filtered
+}
+
+// parseApplyFields parses a comma-separated list of key:value pairs
+// Example: "status:backlog,priority:p1" -> {"status": "backlog", "priority": "p1"}
+func parseApplyFields(s string) map[string]string {
+	result := make(map[string]string)
+	if s == "" {
+		return result
+	}
+
+	pairs := strings.Split(s, ",")
+	for _, pair := range pairs {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+		parts := strings.SplitN(pair, ":", 2)
+		if len(parts) == 2 {
+			key := strings.TrimSpace(parts[0])
+			value := strings.TrimSpace(parts[1])
+			if key != "" && value != "" {
+				result[key] = value
+			}
+		}
+	}
+	return result
 }

@@ -682,6 +682,61 @@ func (c *Client) listUserProjects(owner string) ([]Project, error) {
 	return projects, nil
 }
 
+// Comment represents an issue comment
+type Comment struct {
+	ID        string
+	Author    string
+	Body      string
+	CreatedAt string
+}
+
+// GetIssueComments fetches comments for an issue
+func (c *Client) GetIssueComments(owner, repo string, number int) ([]Comment, error) {
+	if c.gql == nil {
+		return nil, fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
+	}
+
+	var query struct {
+		Repository struct {
+			Issue struct {
+				Comments struct {
+					Nodes []struct {
+						ID        string
+						Body      string
+						CreatedAt string
+						Author    struct {
+							Login string
+						}
+					}
+				} `graphql:"comments(first: 50)"`
+			} `graphql:"issue(number: $number)"`
+		} `graphql:"repository(owner: $owner, name: $repo)"`
+	}
+
+	variables := map[string]interface{}{
+		"owner":  graphql.String(owner),
+		"repo":   graphql.String(repo),
+		"number": graphql.Int(number),
+	}
+
+	err := c.gql.Query("GetIssueComments", &query, variables)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get comments for %s/%s#%d: %w", owner, repo, number, err)
+	}
+
+	var comments []Comment
+	for _, node := range query.Repository.Issue.Comments.Nodes {
+		comments = append(comments, Comment{
+			ID:        node.ID,
+			Author:    node.Author.Login,
+			Body:      node.Body,
+			CreatedAt: node.CreatedAt,
+		})
+	}
+
+	return comments, nil
+}
+
 func (c *Client) listOrgProjects(owner string) ([]Project, error) {
 	var query struct {
 		Organization struct {

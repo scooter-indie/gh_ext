@@ -19,6 +19,8 @@ type triageOptions struct {
 	json        bool
 	list        bool
 	repo        string
+	query       string
+	apply       string
 }
 
 // triageClient defines the interface for API methods used by triage functions.
@@ -55,7 +57,13 @@ Each triage config has a query to match issues and rules to apply.`,
   gh pmu triage tracked --interactive
 
   # Target a specific repository
-  gh pmu triage tracked --repo owner/repo`,
+  gh pmu triage tracked --repo owner/repo
+
+  # Ad-hoc query without config file
+  gh pmu triage --query "is:open -label:triaged" --apply status:backlog
+
+  # Ad-hoc bulk update with multiple fields
+  gh pmu triage --query "label:bug" --apply status:in_progress,priority:p1`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runTriage(cmd, args, opts)
 		},
@@ -66,6 +74,8 @@ Each triage config has a query to match issues and rules to apply.`,
 	cmd.Flags().BoolVar(&opts.json, "json", false, "Output in JSON format")
 	cmd.Flags().BoolVarP(&opts.list, "list", "l", false, "List available triage configurations")
 	cmd.Flags().StringVarP(&opts.repo, "repo", "R", "", "Target specific repository (owner/repo format)")
+	cmd.Flags().StringVarP(&opts.query, "query", "q", "", "Ad-hoc query (e.g., \"is:open -label:triaged\")")
+	cmd.Flags().StringVarP(&opts.apply, "apply", "a", "", "Ad-hoc field updates (e.g., \"status:backlog,priority:p1\")")
 
 	return cmd
 }
@@ -99,9 +109,14 @@ func runTriageWithDeps(cmd *cobra.Command, args []string, opts *triageOptions, c
 		return listTriageConfigs(cmd, cfg, opts.json)
 	}
 
+	// Ad-hoc mode with --query flag
+	if opts.query != "" {
+		return runAdHocTriage(cmd, opts, cfg, client, stdin)
+	}
+
 	// Require config name
 	if len(args) == 0 {
-		return fmt.Errorf("triage config name is required\nUse --list to see available configs")
+		return fmt.Errorf("triage config name is required\nUse --list to see available configs, or use --query for ad-hoc triage")
 	}
 
 	configName := args[0]
@@ -493,4 +508,146 @@ func outputTriageJSON(cmd *cobra.Command, issues []api.Issue, status, configName
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(output)
+}
+
+// runAdHocTriage runs a triage operation using --query and --apply flags instead of a config file entry
+func runAdHocTriage(cmd *cobra.Command, opts *triageOptions, cfg *config.Config, client triageClient, stdin *os.File) error {
+	// Get project
+	project, err := client.GetProject(cfg.Project.Owner, cfg.Project.Number)
+	if err != nil {
+		return fmt.Errorf("failed to get project: %w", err)
+	}
+
+	// Search for issues matching the ad-hoc query
+	matchingIssues, err := searchIssuesForTriage(client, cfg, opts.query, opts.repo)
+	if err != nil {
+		return fmt.Errorf("failed to search issues: %w", err)
+	}
+
+	if len(matchingIssues) == 0 {
+		if opts.json {
+			return outputTriageJSON(cmd, nil, "no-matches", "ad-hoc")
+		}
+		cmd.Println("No issues match the query")
+		return nil
+	}
+
+	// Parse apply fields
+	applyFields := parseTriageApplyFields(opts.apply)
+
+	// Dry run - show what would be changed
+	if opts.dryRun {
+		if opts.json {
+			return outputTriageJSON(cmd, matchingIssues, "dry-run", "ad-hoc")
+		}
+		cmd.Printf("Would process %d issue(s) with query %q:\n\n", len(matchingIssues), opts.query)
+		_ = outputTriageTable(cmd, matchingIssues)
+		cmd.Println()
+		if len(applyFields) > 0 {
+			cmd.Println("Actions to apply:")
+			for field, value := range applyFields {
+				resolved := cfg.ResolveFieldValue(field, value)
+				cmd.Printf("  • Set %s: %s\n", field, resolved)
+			}
+		}
+		return nil
+	}
+
+	// Process issues
+	var processed, skipped, failed int
+	reader := bufio.NewReader(stdin)
+
+	for _, issue := range matchingIssues {
+		// Interactive mode - prompt for each issue
+		if opts.interactive {
+			cmd.Printf("\nProcess #%d: %s? [y/n/q] ", issue.Number, issue.Title)
+			response, _ := reader.ReadString('\n')
+			response = strings.TrimSpace(strings.ToLower(response))
+
+			if response == "q" {
+				cmd.Println("Aborted.")
+				break
+			}
+			if response != "y" && response != "yes" {
+				skipped++
+				continue
+			}
+		}
+
+		// Apply ad-hoc rules
+		err := applyAdHocTriageRules(client, cfg, project, &issue, applyFields)
+		if err != nil {
+			cmd.PrintErrf("Failed to process #%d: %v\n", issue.Number, err)
+			failed++
+			continue
+		}
+
+		processed++
+		if !opts.interactive {
+			cmd.Printf("Processed #%d: %s\n", issue.Number, issue.Title)
+		}
+	}
+
+	// Summary
+	if opts.json {
+		return outputTriageJSON(cmd, matchingIssues, "completed", "ad-hoc")
+	}
+
+	cmd.Printf("\nTriage complete: %d processed", processed)
+	if skipped > 0 {
+		cmd.Printf(", %d skipped", skipped)
+	}
+	if failed > 0 {
+		cmd.Printf(", %d failed", failed)
+	}
+	cmd.Println()
+
+	return nil
+}
+
+// applyAdHocTriageRules applies fields specified via --apply flag
+func applyAdHocTriageRules(client triageClient, cfg *config.Config, project *api.Project, issue *api.Issue, applyFields map[string]string) error {
+	// First, ensure issue is in the project
+	itemID, err := ensureIssueInProject(client, project.ID, issue.ID)
+	if err != nil {
+		return fmt.Errorf("failed to add issue to project: %w", err)
+	}
+
+	// Apply fields
+	for field, value := range applyFields {
+		fieldName := cfg.GetFieldName(field)
+		resolvedValue := cfg.ResolveFieldValue(field, value)
+
+		if err := client.SetProjectItemField(project.ID, itemID, fieldName, resolvedValue); err != nil {
+			return fmt.Errorf("failed to set %s: %w", field, err)
+		}
+	}
+
+	return nil
+}
+
+// parseTriageApplyFields parses a comma-separated list of key:value pairs
+// Example: "status:backlog,priority:p1" -> {"status": "backlog", "priority": "p1"}
+func parseTriageApplyFields(s string) map[string]string {
+	result := make(map[string]string)
+	if s == "" {
+		return result
+	}
+
+	pairs := strings.Split(s, ",")
+	for _, pair := range pairs {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+		parts := strings.SplitN(pair, ":", 2)
+		if len(parts) == 2 {
+			key := strings.TrimSpace(parts[0])
+			value := strings.TrimSpace(parts[1])
+			if key != "" && value != "" {
+				result[key] = value
+			}
+		}
+	}
+	return result
 }

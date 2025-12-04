@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
+	"runtime"
 	"strings"
 	"text/tabwriter"
 
@@ -15,8 +17,13 @@ import (
 type listOptions struct {
 	status       string
 	priority     string
+	assignee     string
+	label        string
+	search       string
+	limit        int
 	hasSubIssues bool
 	json         bool
+	web          bool
 }
 
 func newListCommand() *cobra.Command {
@@ -37,8 +44,13 @@ Use filters to narrow down the results.`,
 
 	cmd.Flags().StringVarP(&opts.status, "status", "s", "", "Filter by status (e.g., backlog, in_progress, done)")
 	cmd.Flags().StringVarP(&opts.priority, "priority", "p", "", "Filter by priority (e.g., p0, p1, p2)")
+	cmd.Flags().StringVarP(&opts.assignee, "assignee", "a", "", "Filter by assignee login")
+	cmd.Flags().StringVarP(&opts.label, "label", "l", "", "Filter by label name")
+	cmd.Flags().StringVarP(&opts.search, "search", "q", "", "Search in issue title and body")
+	cmd.Flags().IntVarP(&opts.limit, "limit", "n", 0, "Limit number of results (0 for no limit)")
 	cmd.Flags().BoolVar(&opts.hasSubIssues, "has-sub-issues", false, "Filter to only show parent issues (issues with sub-issues)")
 	cmd.Flags().BoolVar(&opts.json, "json", false, "Output in JSON format")
+	cmd.Flags().BoolVarP(&opts.web, "web", "w", false, "Open project board in browser")
 
 	return cmd
 }
@@ -69,6 +81,11 @@ func runList(cmd *cobra.Command, opts *listOptions) error {
 		return fmt.Errorf("failed to get project: %w", err)
 	}
 
+	// Handle --web flag: open project in browser
+	if opts.web {
+		return openInBrowser(project.URL)
+	}
+
 	// Build filter
 	var filter *api.ProjectItemsFilter
 	if len(cfg.Repositories) > 0 {
@@ -95,9 +112,29 @@ func runList(cmd *cobra.Command, opts *listOptions) error {
 		items = filterByFieldValue(items, "Priority", targetPriority)
 	}
 
+	// Apply assignee filter
+	if opts.assignee != "" {
+		items = filterByAssignee(items, opts.assignee)
+	}
+
+	// Apply label filter
+	if opts.label != "" {
+		items = filterByLabel(items, opts.label)
+	}
+
+	// Apply search filter
+	if opts.search != "" {
+		items = filterBySearch(items, opts.search)
+	}
+
 	// Apply has-sub-issues filter
 	if opts.hasSubIssues {
 		items = filterByHasSubIssues(client, items)
+	}
+
+	// Apply limit
+	if opts.limit > 0 && len(items) > opts.limit {
+		items = items[:opts.limit]
 	}
 
 	// Output
@@ -257,4 +294,69 @@ func outputJSON(cmd *cobra.Command, items []api.ProjectItem) error {
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(output)
+}
+
+// filterByAssignee filters items by assignee login
+func filterByAssignee(items []api.ProjectItem, assignee string) []api.ProjectItem {
+	var filtered []api.ProjectItem
+	for _, item := range items {
+		if item.Issue == nil {
+			continue
+		}
+		for _, a := range item.Issue.Assignees {
+			if strings.EqualFold(a.Login, assignee) {
+				filtered = append(filtered, item)
+				break
+			}
+		}
+	}
+	return filtered
+}
+
+// filterByLabel filters items by label name
+func filterByLabel(items []api.ProjectItem, label string) []api.ProjectItem {
+	var filtered []api.ProjectItem
+	for _, item := range items {
+		if item.Issue == nil {
+			continue
+		}
+		for _, l := range item.Issue.Labels {
+			if strings.EqualFold(l.Name, label) {
+				filtered = append(filtered, item)
+				break
+			}
+		}
+	}
+	return filtered
+}
+
+// filterBySearch filters items by searching in title and body
+func filterBySearch(items []api.ProjectItem, search string) []api.ProjectItem {
+	var filtered []api.ProjectItem
+	searchLower := strings.ToLower(search)
+	for _, item := range items {
+		if item.Issue == nil {
+			continue
+		}
+		titleLower := strings.ToLower(item.Issue.Title)
+		bodyLower := strings.ToLower(item.Issue.Body)
+		if strings.Contains(titleLower, searchLower) || strings.Contains(bodyLower, searchLower) {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
+// openInBrowser opens the given URL in the default browser
+func openInBrowser(url string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "windows":
+		cmd = exec.Command("cmd", "/c", "start", url)
+	default: // linux, freebsd, etc.
+		cmd = exec.Command("xdg-open", url)
+	}
+	return cmd.Start()
 }
