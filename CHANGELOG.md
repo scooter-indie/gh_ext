@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.11] - 2025-12-04
+
+### Added
+- `--repo` / `-R` flag to `triage` command for targeting specific repositories (#91)
+
+### Fixed
+- `GetProjectItems` now uses cursor-based pagination to fetch all items (#90)
+  - Previously limited to first 100 items, causing "issue not in project" errors for large projects
+
+### Documentation
+- Clarified distinction between labels and project fields in `gh-workflow.md`
+- Added pagination integration test scenario to backlog (IT-2.4)
+
 ## [0.2.10] - 2025-12-04
 
 ### Added
