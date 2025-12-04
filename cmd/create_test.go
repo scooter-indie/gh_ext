@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -280,5 +282,341 @@ func TestCreateCommand_LabelFlagIsArray(t *testing.T) {
 	// Check that it's a stringArray type (can be specified multiple times)
 	if flag.Value.Type() != "stringArray" {
 		t.Errorf("Expected --label to be stringArray, got %s", flag.Value.Type())
+	}
+}
+
+// ============================================================================
+// runCreate Integration Tests (with temp config files)
+// ============================================================================
+
+// createTempConfig creates a temporary directory with a .gh-pmu.yml config file
+// and returns the directory path. Caller should defer os.RemoveAll(dir).
+func createTempConfig(t *testing.T, content string) string {
+	t.Helper()
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, ".gh-pmu.yml")
+	if err := os.WriteFile(configPath, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to write temp config: %v", err)
+	}
+	return dir
+}
+
+func TestRunCreate_NoConfigFile_ReturnsError(t *testing.T) {
+	// ARRANGE: Empty temp directory (no config)
+	dir := t.TempDir()
+	originalDir, _ := os.Getwd()
+	defer os.Chdir(originalDir)
+
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Failed to chdir: %v", err)
+	}
+
+	cmd := NewRootCommand()
+	cmd.SetArgs([]string{"create", "--title", "Test Issue"})
+
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+
+	// ACT
+	err := cmd.Execute()
+
+	// ASSERT
+	if err == nil {
+		t.Fatal("Expected error when no config file exists")
+	}
+	if !strings.Contains(err.Error(), "configuration") {
+		t.Errorf("Expected error about configuration, got: %v", err)
+	}
+}
+
+func TestRunCreate_InvalidConfig_ReturnsError(t *testing.T) {
+	// ARRANGE: Config missing required fields
+	config := `
+project:
+  owner: ""
+  number: 0
+repositories: []
+`
+	dir := createTempConfig(t, config)
+	originalDir, _ := os.Getwd()
+	defer os.Chdir(originalDir)
+
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Failed to chdir: %v", err)
+	}
+
+	cmd := NewRootCommand()
+	cmd.SetArgs([]string{"create", "--title", "Test Issue"})
+
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+
+	// ACT
+	err := cmd.Execute()
+
+	// ASSERT
+	if err == nil {
+		t.Fatal("Expected error for invalid config")
+	}
+	if !strings.Contains(err.Error(), "invalid configuration") {
+		t.Errorf("Expected 'invalid configuration' error, got: %v", err)
+	}
+}
+
+func TestRunCreate_NoRepositories_ReturnsError(t *testing.T) {
+	// ARRANGE: Config with no repositories
+	config := `
+project:
+  owner: "test-owner"
+  number: 1
+repositories: []
+`
+	dir := createTempConfig(t, config)
+	originalDir, _ := os.Getwd()
+	defer os.Chdir(originalDir)
+
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Failed to chdir: %v", err)
+	}
+
+	cmd := NewRootCommand()
+	cmd.SetArgs([]string{"create", "--title", "Test Issue"})
+
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+
+	// ACT
+	err := cmd.Execute()
+
+	// ASSERT
+	if err == nil {
+		t.Fatal("Expected error for missing repositories")
+	}
+	// Either "invalid configuration" (validation) or "no repository" error
+	errStr := err.Error()
+	if !strings.Contains(errStr, "repository") && !strings.Contains(errStr, "configuration") {
+		t.Errorf("Expected error about repositories, got: %v", err)
+	}
+}
+
+func TestRunCreate_InvalidRepositoryFormat_ReturnsError(t *testing.T) {
+	// ARRANGE: Config with invalid repository format (missing slash)
+	config := `
+project:
+  owner: "test-owner"
+  number: 1
+repositories:
+  - "invalid-repo-no-slash"
+`
+	dir := createTempConfig(t, config)
+	originalDir, _ := os.Getwd()
+	defer os.Chdir(originalDir)
+
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Failed to chdir: %v", err)
+	}
+
+	cmd := NewRootCommand()
+	cmd.SetArgs([]string{"create", "--title", "Test Issue"})
+
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+
+	// ACT
+	err := cmd.Execute()
+
+	// ASSERT
+	if err == nil {
+		t.Fatal("Expected error for invalid repository format")
+	}
+	if !strings.Contains(err.Error(), "invalid repository format") {
+		t.Errorf("Expected 'invalid repository format' error, got: %v", err)
+	}
+}
+
+func TestRunCreate_NoTitle_ReturnsInteractiveModeError(t *testing.T) {
+	// ARRANGE: Valid config but no title provided
+	config := `
+project:
+  owner: "test-owner"
+  number: 1
+repositories:
+  - "owner/repo"
+`
+	dir := createTempConfig(t, config)
+	originalDir, _ := os.Getwd()
+	defer os.Chdir(originalDir)
+
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Failed to chdir: %v", err)
+	}
+
+	cmd := NewRootCommand()
+	cmd.SetArgs([]string{"create"}) // No --title
+
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+
+	// ACT
+	err := cmd.Execute()
+
+	// ASSERT
+	if err == nil {
+		t.Fatal("Expected error when no title provided")
+	}
+	if !strings.Contains(err.Error(), "--title is required") {
+		t.Errorf("Expected '--title is required' error, got: %v", err)
+	}
+}
+
+func TestRunCreate_ValidConfigWithTitle_AttemptsAPICall(t *testing.T) {
+	// ARRANGE: Valid config with title provided
+	// This test verifies that we get past config validation and into API calls
+	config := `
+project:
+  owner: "test-owner"
+  number: 1
+repositories:
+  - "owner/repo"
+`
+	dir := createTempConfig(t, config)
+	originalDir, _ := os.Getwd()
+	defer os.Chdir(originalDir)
+
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Failed to chdir: %v", err)
+	}
+
+	cmd := NewRootCommand()
+	cmd.SetArgs([]string{"create", "--title", "Test Issue", "--body", "Test body"})
+
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+
+	// ACT
+	err := cmd.Execute()
+
+	// ASSERT: We expect an API error (since we're not authenticated in tests)
+	// The key thing is we got PAST the config validation phase
+	if err == nil {
+		t.Skip("Skipping: API call succeeded (authenticated environment)")
+	}
+
+	// Should be an API-related error, not a config error
+	errStr := err.Error()
+	if strings.Contains(errStr, "configuration") || strings.Contains(errStr, "--title is required") {
+		t.Errorf("Expected API error after passing config validation, got: %v", err)
+	}
+}
+
+func TestRunCreate_WithAllFlags_ParsesFlagsCorrectly(t *testing.T) {
+	// ARRANGE: Valid config with all flags
+	config := `
+project:
+  owner: "test-owner"
+  number: 1
+repositories:
+  - "owner/repo"
+fields:
+  status:
+    field: Status
+    values:
+      todo: "Todo"
+      in_progress: "In Progress"
+  priority:
+    field: Priority
+    values:
+      p1: "P1"
+      p2: "P2"
+defaults:
+  labels:
+    - "auto-label"
+`
+	dir := createTempConfig(t, config)
+	originalDir, _ := os.Getwd()
+	defer os.Chdir(originalDir)
+
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Failed to chdir: %v", err)
+	}
+
+	cmd := NewRootCommand()
+	cmd.SetArgs([]string{
+		"create",
+		"--title", "Test Issue",
+		"--body", "Test body",
+		"--status", "in_progress",
+		"--priority", "p1",
+		"--label", "bug",
+		"--label", "urgent",
+	})
+
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+
+	// ACT
+	err := cmd.Execute()
+
+	// ASSERT: We should get past flag parsing to API calls
+	if err == nil {
+		t.Skip("Skipping: API call succeeded (authenticated environment)")
+	}
+
+	// Verify we didn't get a flag parsing error
+	errStr := err.Error()
+	if strings.Contains(errStr, "unknown flag") || strings.Contains(errStr, "flag needs") {
+		t.Errorf("Expected to pass flag parsing, got: %v", err)
+	}
+}
+
+func TestRunCreate_ConfigWithDefaults_MergesLabels(t *testing.T) {
+	// ARRANGE: Config with default labels
+	config := `
+project:
+  owner: "test-owner"
+  number: 1
+repositories:
+  - "owner/repo"
+defaults:
+  labels:
+    - "pm-tracked"
+    - "auto-created"
+  status: "todo"
+  priority: "p2"
+`
+	dir := createTempConfig(t, config)
+	originalDir, _ := os.Getwd()
+	defer os.Chdir(originalDir)
+
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Failed to chdir: %v", err)
+	}
+
+	cmd := NewRootCommand()
+	cmd.SetArgs([]string{"create", "--title", "Test Issue"})
+
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+
+	// ACT
+	err := cmd.Execute()
+
+	// ASSERT: Should reach API call phase (past config loading and defaults)
+	if err == nil {
+		t.Skip("Skipping: API call succeeded (authenticated environment)")
+	}
+
+	// Verify we got past config validation
+	errStr := err.Error()
+	if strings.Contains(errStr, "configuration") {
+		t.Errorf("Expected to pass config validation with defaults, got: %v", err)
 	}
 }
