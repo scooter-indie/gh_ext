@@ -1,6 +1,6 @@
 # Coverage Report
 
-**Total Coverage: 18.8%**
+**Total Coverage: 28.9%**
 
 | File | Function | Coverage |
 |------|----------|----------|
@@ -46,17 +46,18 @@
 | cmd/sub.go:458: | outputSubListTable | 0.0% |
 | cmd/sub.go:499: | newSubRemoveCommand | 66.7% |
 | cmd/sub.go:521: | runSubRemove | 0.0% |
-| cmd/triage.go:23: | newTriageCommand | 87.5% |
-| cmd/triage.go:58: | runTriage | 0.0% |
-| cmd/triage.go:177: | listTriageConfigs | 0.0% |
-| cmd/triage.go:226: | describeActions | 0.0% |
-| cmd/triage.go:247: | describeTriageActions | 0.0% |
-| cmd/triage.go:267: | searchIssuesForTriage | 0.0% |
-| cmd/triage.go:305: | matchesTriageQuery | 0.0% |
-| cmd/triage.go:356: | applyTriageRules | 0.0% |
-| cmd/triage.go:386: | ensureIssueInProject | 0.0% |
-| cmd/triage.go:400: | outputTriageTable | 0.0% |
-| cmd/triage.go:440: | outputTriageJSON | 0.0% |
+| cmd/triage.go:33: | newTriageCommand | 87.5% |
+| cmd/triage.go:68: | runTriage | 0.0% |
+| cmd/triage.go:91: | runTriageWithDeps | 98.2% |
+| cmd/triage.go:192: | listTriageConfigs | 83.3% |
+| cmd/triage.go:241: | describeActions | 100.0% |
+| cmd/triage.go:262: | describeTriageActions | 100.0% |
+| cmd/triage.go:282: | searchIssuesForTriage | 94.4% |
+| cmd/triage.go:320: | matchesTriageQuery | 92.0% |
+| cmd/triage.go:371: | applyTriageRules | 100.0% |
+| cmd/triage.go:401: | ensureIssueInProject | 100.0% |
+| cmd/triage.go:415: | outputTriageTable | 100.0% |
+| cmd/triage.go:455: | outputTriageJSON | 100.0% |
 | cmd/view.go:19: | newViewCommand | 80.0% |
 | cmd/view.go:42: | runView | 0.0% |
 | cmd/view.go:167: | outputViewJSON | 0.0% |
@@ -126,4 +127,4 @@
 | internal/ui/ui.go:388: | max | 100.0% |
 | main.go:9: | main | 0.0% |
 
-*Generated: 2025-12-03 for v0.2.8*
+*Generated: 2025-12-04 for v0.2.9*
