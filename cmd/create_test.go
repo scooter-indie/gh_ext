@@ -305,7 +305,7 @@ func TestRunCreate_NoConfigFile_ReturnsError(t *testing.T) {
 	// ARRANGE: Empty temp directory (no config)
 	dir := t.TempDir()
 	originalDir, _ := os.Getwd()
-	defer os.Chdir(originalDir)
+	defer func() { _ = os.Chdir(originalDir) }()
 
 	if err := os.Chdir(dir); err != nil {
 		t.Fatalf("Failed to chdir: %v", err)
@@ -340,7 +340,7 @@ repositories: []
 `
 	dir := createTempConfig(t, config)
 	originalDir, _ := os.Getwd()
-	defer os.Chdir(originalDir)
+	defer func() { _ = os.Chdir(originalDir) }()
 
 	if err := os.Chdir(dir); err != nil {
 		t.Fatalf("Failed to chdir: %v", err)
@@ -375,7 +375,7 @@ repositories: []
 `
 	dir := createTempConfig(t, config)
 	originalDir, _ := os.Getwd()
-	defer os.Chdir(originalDir)
+	defer func() { _ = os.Chdir(originalDir) }()
 
 	if err := os.Chdir(dir); err != nil {
 		t.Fatalf("Failed to chdir: %v", err)
@@ -413,7 +413,7 @@ repositories:
 `
 	dir := createTempConfig(t, config)
 	originalDir, _ := os.Getwd()
-	defer os.Chdir(originalDir)
+	defer func() { _ = os.Chdir(originalDir) }()
 
 	if err := os.Chdir(dir); err != nil {
 		t.Fatalf("Failed to chdir: %v", err)
@@ -449,7 +449,7 @@ repositories:
 `
 	dir := createTempConfig(t, config)
 	originalDir, _ := os.Getwd()
-	defer os.Chdir(originalDir)
+	defer func() { _ = os.Chdir(originalDir) }()
 
 	if err := os.Chdir(dir); err != nil {
 		t.Fatalf("Failed to chdir: %v", err)
@@ -486,7 +486,7 @@ repositories:
 `
 	dir := createTempConfig(t, config)
 	originalDir, _ := os.Getwd()
-	defer os.Chdir(originalDir)
+	defer func() { _ = os.Chdir(originalDir) }()
 
 	if err := os.Chdir(dir); err != nil {
 		t.Fatalf("Failed to chdir: %v", err)
@@ -540,7 +540,7 @@ defaults:
 `
 	dir := createTempConfig(t, config)
 	originalDir, _ := os.Getwd()
-	defer os.Chdir(originalDir)
+	defer func() { _ = os.Chdir(originalDir) }()
 
 	if err := os.Chdir(dir); err != nil {
 		t.Fatalf("Failed to chdir: %v", err)
@@ -593,7 +593,7 @@ defaults:
 `
 	dir := createTempConfig(t, config)
 	originalDir, _ := os.Getwd()
-	defer os.Chdir(originalDir)
+	defer func() { _ = os.Chdir(originalDir) }()
 
 	if err := os.Chdir(dir); err != nil {
 		t.Fatalf("Failed to chdir: %v", err)
