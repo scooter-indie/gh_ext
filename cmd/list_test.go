@@ -864,6 +864,67 @@ func TestFilterByLabel(t *testing.T) {
 // filterBySearch Tests
 // ============================================================================
 
+// ============================================================================
+// filterByHasSubIssues Tests
+// ============================================================================
+
+// Note: filterByHasSubIssues requires a real API client to call GetSubIssues.
+// These tests cover the function's behavior for edge cases and structural patterns.
+// Full integration testing with actual GitHub API is done in integration tests.
+
+func TestFilterByHasSubIssues_NilClient(t *testing.T) {
+	// Test that the function handles nil client gracefully
+	// Note: In production, this would panic, so we just test the function exists
+	// and has the correct signature
+
+	// We can't call with nil client as it would panic,
+	// but we can verify the function signature
+	var _ func(*api.Client, []api.ProjectItem) []api.ProjectItem = filterByHasSubIssues
+}
+
+func TestFilterByHasSubIssues_EmptyItems(t *testing.T) {
+	// Create a minimal client just for structure testing
+	// Note: This won't make real API calls since items is empty
+	client := api.NewClient()
+	if client == nil {
+		t.Skip("Could not create API client - likely not authenticated")
+	}
+
+	// Empty items should return empty result without any API calls
+	result := filterByHasSubIssues(client, []api.ProjectItem{})
+
+	if len(result) != 0 {
+		t.Errorf("Expected empty result for empty input, got %d items", len(result))
+	}
+}
+
+func TestFilterByHasSubIssues_NilIssueItems(t *testing.T) {
+	// Create a minimal client
+	client := api.NewClient()
+	if client == nil {
+		t.Skip("Could not create API client - likely not authenticated")
+	}
+
+	// Items with nil Issue should be skipped (no API calls made)
+	items := []api.ProjectItem{
+		{ID: "1", Issue: nil},
+		{ID: "2", Issue: nil},
+	}
+
+	result := filterByHasSubIssues(client, items)
+
+	if len(result) != 0 {
+		t.Errorf("Expected empty result for items with nil Issue, got %d items", len(result))
+	}
+}
+
+func TestFilterByHasSubIssues_FunctionSignature(t *testing.T) {
+	// Verify the function has the expected signature
+	// This is a compile-time check that the function exists and has correct types
+	type filterFunc func(*api.Client, []api.ProjectItem) []api.ProjectItem
+	var _ filterFunc = filterByHasSubIssues
+}
+
 func TestFilterBySearch(t *testing.T) {
 	tests := []struct {
 		name      string
