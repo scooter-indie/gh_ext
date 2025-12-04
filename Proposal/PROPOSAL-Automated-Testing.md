@@ -1,26 +1,38 @@
 # Proposal: Automated Non-Destructive Integration Tests & UAT
 
-**Version:** 1.0
-**Date:** 2025-12-03
-**Author:** PRD-Analyst
-**Status:** Draft
+**Version:** 1.2
+**Date:** 2025-12-04
+**Author:** PRD-Analyst, API-Integration-Specialist
+**Status:** Active
 
 ---
 
 ## Executive Summary
 
-### Problem Statement
+### Current State (v0.2.10)
 
-The gh-pmu CLI extension currently has ~36% test coverage, primarily unit tests covering command structure and configuration parsing. The existing test suite lacks:
+The gh-pmu CLI extension has achieved **63.6% total test coverage** through comprehensive unit testing efforts. Current coverage by package:
 
-1. **Integration tests** that verify actual GitHub API interactions
+| Package | Coverage | Status |
+|---------|----------|--------|
+| `internal/api` | 96.6% | ✅ Excellent |
+| `internal/config` | 97.0% | ✅ Excellent |
+| `internal/ui` | 96.9% | ✅ Excellent |
+| `cmd` | 51.2% | 🔄 Needs integration tests |
+| **Total** | **63.6%** | 🎯 Target: 80% |
+
+### Remaining Gap Analysis
+
+The existing test suite has strong unit test coverage but lacks:
+
+1. **Integration tests** for `run*` functions that make GitHub API calls (12 functions at 0%)
 2. **End-to-end workflow tests** covering complete user scenarios
 3. **UAT scenarios** validating acceptance criteria from a user perspective
 4. **Non-destructive test patterns** that can run safely against real GitHub projects
 
 ### Proposed Solution
 
-Implement a comprehensive automated testing strategy using **non-destructive patterns** that:
+Implement integration and UAT testing using **non-destructive patterns** that:
 - Test against dedicated test fixtures (projects, repos, issues)
 - Use read-only operations where possible
 - Clean up any created resources after tests
@@ -30,6 +42,7 @@ Implement a comprehensive automated testing strategy using **non-destructive pat
 
 | Benefit | Impact |
 |---------|--------|
+| Reach 80% coverage target | Close the 16.4% gap via integration tests |
 | Increased confidence in releases | Catch API integration bugs before users |
 | Faster development cycles | Automated regression testing |
 | Living documentation | Tests serve as usage examples |
@@ -490,14 +503,16 @@ jobs:
 
 ## Success Metrics
 
-| Metric | Target | Measurement |
-|--------|--------|-------------|
-| Integration test coverage | 80% of API operations | Query/mutation coverage |
-| Command test coverage | 100% of commands | At least 1 test per command |
-| UAT coverage | 100% of PRD acceptance criteria | Traced to PRD |
-| Test execution time | < 5 minutes | CI/CD duration |
-| Test reliability | < 1% flaky rate | Failure tracking |
-| Cleanup success rate | 100% | No orphaned resources |
+| Metric | Current | Target | Measurement |
+|--------|---------|--------|-------------|
+| Overall test coverage | 63.6% | 80% | `go test -cover` |
+| `cmd/` package coverage | 51.2% | 80% | Per-package coverage |
+| Integration test coverage | 0% | 80% of `run*` functions | Query/mutation coverage |
+| Command test coverage | Partial | 100% of commands | At least 1 test per command |
+| UAT coverage | 0% | 100% of PRD acceptance criteria | Traced to PRD |
+| Test execution time | ~2s | < 5 minutes (with integration) | CI/CD duration |
+| Test reliability | N/A | < 1% flaky rate | Failure tracking |
+| Cleanup success rate | N/A | 100% | No orphaned resources |
 
 ---
 
@@ -1004,5 +1019,5 @@ These `run*` functions involve API calls and require integration testing infrast
 |---------|------|--------|---------|
 | 1.0 | 2025-12-03 | PRD-Analyst | Initial proposal |
 | 1.1 | 2025-12-03 | API-Integration-Specialist | Added Appendix C: runCreate integration test requirements |
-| 1.2 | 2025-12-04 | API-Integration-Specialist | Added Appendix D: Functions below 80% coverage based on v0.2.10 |
+| 1.2 | 2025-12-04 | API-Integration-Specialist | Updated executive summary with current coverage (63.6%), added Appendix D with functions below 80% coverage based on v0.2.10 release |
 
