@@ -197,10 +197,13 @@ All integration test stories must meet these criteria:
 - [ ] Test --recursive flag with sub-issues
 - [ ] Test field value aliases
 - [ ] Test issue not in project error
+- [ ] Test pagination: move issue in project with >100 items (ref: #90)
 
 **Story Points:** 5
 **Priority:** High
 **Status:** Backlog
+
+**Notes:** Pagination test requires a project with >100 items to verify fix from #90.
 
 ---
 
